@@ -8,6 +8,7 @@ var (
 	Web      = Type("web")
 	Telegram = Type("telegram")
 	Torrent  = Type("torrent")
+	YouTube  = Type("youtube")
 )
 
 type Parser interface {
