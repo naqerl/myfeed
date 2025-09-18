@@ -85,12 +85,19 @@ func main() {
 	feeds := make([]*gofeed.Feed, len(conf.Resources))
 	fp := gofeed.NewParser()
 	for i, resource := range conf.Resources {
-		feed, err := fp.ParseURL(resource.FeedURL)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("'%s' parse failed with %w", resource.FeedURL, err))
-			continue
+		switch resource.T {
+		case config.RSS:
+			feed, err := fp.ParseURL(resource.FeedURL)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("'%s' parse failed with %w", resource.FeedURL, err))
+				continue
+			}
+			feeds[i] = feed
+		case config.TelegramChannel:
+			panic("TelegramChannel resource type not implemented yet")
+		default:
+			errs = append(errs, fmt.Errorf("unknown resource type: %s", resource.T))
 		}
-		feeds[i] = feed
 	}
 	slog.Info("fetched feeds", "amount", len(feeds))
 	if len(errs) > 0 {
@@ -106,6 +113,10 @@ func main() {
 			continue
 		}
 		resource := conf.Resources[i]
+		if resource.T != config.RSS {
+			slog.Debug("skipping non-RSS resource", "type", resource.T)
+			continue
+		}
 		parser := parsers[resource.ParserT]
 		for _, item := range feed.Items {
 			data, err := parser.Parse(item.Link)

@@ -11,6 +11,13 @@ import (
 	"github.com/scipunch/myfeed/parser"
 )
 
+type ResourceType = string
+
+var (
+	RSS             = ResourceType("rss")
+	TelegramChannel = ResourceType("telegram_channel")
+)
+
 const baseCfgPath = "myfeed/config.toml"
 
 type Config struct {
@@ -19,8 +26,9 @@ type Config struct {
 }
 
 type ResourceConfig struct {
-	FeedURL string      `toml:"feed_url"`
-	ParserT parser.Type `toml:"parser"`
+	FeedURL string       `toml:"feed_url"`
+	ParserT parser.Type  `toml:"parser"`
+	T       ResourceType `toml:"type"`
 }
 
 func Read(path string) (Config, error) {
