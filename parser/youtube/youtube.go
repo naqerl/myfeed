@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,6 +56,8 @@ func (r Response) String() string {
 func New() (Parser, error) {
 	var p Parser
 
+	slog.Info("youtube parser: initializing")
+
 	// Set up virtual environment path in temp directory
 	tempDir := os.TempDir()
 	p.venvPath = filepath.Join(tempDir, "myfeed_youtube_venv")
@@ -66,23 +69,30 @@ func New() (Parser, error) {
 		p.pythonPath = filepath.Join(p.venvPath, "bin", "python")
 	}
 
+	slog.Info("youtube parser: setting up virtual environment", "path", p.venvPath)
+
 	// Create virtual environment if it doesn't exist
 	if err := p.ensureVirtualEnv(); err != nil {
 		return p, fmt.Errorf("failed to set up virtual environment: %w", err)
 	}
 
+	slog.Info("youtube parser: initialization complete")
 	return p, nil
 }
 
 func (p Parser) ensureVirtualEnv() error {
 	// Check if virtual environment exists
 	if _, err := os.Stat(p.pythonPath); err == nil {
+		slog.Info("youtube parser: virtual environment already exists")
 		return nil // Virtual environment already exists
 	}
+
+	slog.Info("youtube parser: creating virtual environment")
 
 	// Create virtual environment
 	cmd := exec.Command("python3", "-m", "venv", p.venvPath)
 	if err := cmd.Run(); err != nil {
+		slog.Info("youtube parser: python3 failed, trying python")
 		// Try with python if python3 is not available
 		cmd = exec.Command("python", "-m", "venv", p.venvPath)
 		if err := cmd.Run(); err != nil {
@@ -90,11 +100,14 @@ func (p Parser) ensureVirtualEnv() error {
 		}
 	}
 
+	slog.Info("youtube parser: virtual environment created successfully")
 	return nil
 }
 
 func (p Parser) Parse(uri string) (parser.Response, error) {
 	var resp Response
+
+	slog.Info("youtube parser: starting transcription", "url", uri)
 
 	// Create temporary script file
 	scriptPath := filepath.Join(p.venvPath, "transcribe.py")
@@ -103,20 +116,27 @@ func (p Parser) Parse(uri string) (parser.Response, error) {
 	}
 	defer os.Remove(scriptPath)
 
+	slog.Info("youtube parser: executing transcription script")
+
 	// Execute transcription script
 	cmd := exec.Command(p.pythonPath, scriptPath, uri)
 	output, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
+			slog.Error("youtube parser: transcription failed", "error", string(exitErr.Stderr))
 			return resp, fmt.Errorf("transcription failed: %s", string(exitErr.Stderr))
 		}
 		return resp, fmt.Errorf("failed to execute transcription: %w", err)
 	}
 
+	slog.Info("youtube parser: parsing transcription output")
+
 	// Parse JSON output
 	if err := json.Unmarshal(output, &resp.Transcription); err != nil {
 		return resp, fmt.Errorf("failed to parse transcription output: %w", err)
 	}
+
+	slog.Info("youtube parser: transcription completed", "title", resp.Transcription.Title, "segments", len(resp.Transcription.Segments))
 
 	return resp, nil
 }

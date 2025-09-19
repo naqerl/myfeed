@@ -106,17 +106,13 @@ func main() {
 
 	// Process new items
 	errs = nil
-	newsletter := Newsletter{Title: "Test newsletter", Pages: nil}
+	newsletter := Newsletter{Title: "Test newsletter"}
 	for i, feed := range feeds {
 		if feed == nil {
 			slog.Debug("skipping failed to parse feed")
 			continue
 		}
 		resource := conf.Resources[i]
-		if resource.T != config.RSS {
-			slog.Debug("skipping non-RSS resource", "type", resource.T)
-			continue
-		}
 		parser := parsers[resource.ParserT]
 		for _, item := range feed.Items {
 			data, err := parser.Parse(item.Link)
