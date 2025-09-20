@@ -165,16 +165,6 @@ func validateExactMatch(t *testing.T, response interface{}, testData TestData) {
 		}
 	}
 
-	// Print full transcription for test data generation
-	t.Logf("=== FULL TRANSCRIPTION FOR TEST DATA ===")
-	t.Logf("Title: %s", actual.Title)
-	t.Logf("Language: %s", actual.Language)
-	t.Logf("Segments (%d):", len(actual.Segments))
-	for i, seg := range actual.Segments {
-		t.Logf("  [%d] %.3f-%.3f: %s", i, seg.Start, seg.End, seg.Text)
-	}
-	t.Logf("=== END TRANSCRIPTION ===")
-
 	t.Logf("✓ Exact match validation passed - Title: %s, Language: %s, Segments: %d",
 		actual.Title, actual.Language, len(actual.Segments))
 }

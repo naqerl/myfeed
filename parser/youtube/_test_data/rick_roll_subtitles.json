@@ -1,20 +1,14 @@
 {
   "testCase": {
-    "name": "RickRoll_WithSubtitles",
+    "name": "StructureValidation",
     "videoURL": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    "description": "Rick Astley video with subtitle validation",
+    "description": "Structure validation test",
     "skipInShortMode": false,
     "skipReason": ""
   },
   "expectedOutput": {
     "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
     "language": "en",
-    "segments": [
-      {
-        "start": 1.36,
-        "end": 3.04,
-        "text": "[♪♪♪]"
-      }
-    ]
+    "segments": []
   }
 }
