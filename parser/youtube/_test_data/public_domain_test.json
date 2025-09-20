@@ -1,0 +1,14 @@
+{
+  "testCase": {
+    "name": "PublicDomain_Test",
+    "videoURL": "https://www.youtube.com/watch?v=L_LUpnjgPso",
+    "description": "Public domain video for testing (NASA video)",
+    "skipInShortMode": false,
+    "skipReason": ""
+  },
+  "expectedOutput": {
+    "title": "",
+    "language": "en",
+    "segments": []
+  }
+}
