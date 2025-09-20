@@ -9,7 +9,7 @@ type testCase struct {
 	name         string
 	videoURL     string
 	description  string
-	expectMethod string // "subtitle", "whisper", or "either"
+	expectMethod string // "subtitle", "whisper"
 	minSegments  int
 	shouldSkip   bool
 }
@@ -28,7 +28,7 @@ func TestYouTubeParser(t *testing.T) {
 			name:         "TestVideo_MayNeedWhisper",
 			videoURL:     "https://www.youtube.com/watch?v=jO9RSppTirQ",
 			description:  "Original test video (may need whisper fallback)",
-			expectMethod: "either",
+			expectMethod: "whisper",
 			minSegments:  1, // Lower expectation since whisper might be slow
 			shouldSkip:   false,
 		},
@@ -42,7 +42,7 @@ func TestYouTubeParser(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Skip whisper tests in short mode to save time
-			if testing.Short() && tc.expectMethod == "either" {
+			if testing.Short() && tc.expectMethod == "whisper" {
 				t.Skip("Skipping whisper fallback test in short mode")
 				return
 			}
