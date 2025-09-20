@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-YouTube video transcription script using yt-dlp and faster-whisper.
-This script downloads audio from YouTube videos and transcribes them with timing information.
+YouTube video transcription script using yt-dlp subtitle extraction.
+This script extracts subtitles from YouTube videos using yt-dlp's built-in subtitle functionality.
 """
 
 import sys
@@ -9,26 +9,17 @@ import os
 import json
 import tempfile
 import subprocess
+import re
 from pathlib import Path
 
 
 def ensure_dependencies():
-    """Ensure yt-dlp, faster-whisper and tqdm are installed."""
-    # First ensure tqdm is available
-    try:
-        import tqdm
-    except ImportError:
-        print("Installing tqdm...", file=sys.stderr)
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "tqdm"])
-    
-    from tqdm import tqdm as progress_bar
-    
+    """Ensure yt-dlp is installed."""
     packages_to_check = [
         ("yt_dlp", "yt-dlp"),
-        ("faster_whisper", "faster-whisper")
     ]
     
-    for module_name, package_name in progress_bar(packages_to_check, desc="Checking dependencies"):
+    for module_name, package_name in packages_to_check:
         try:
             __import__(module_name)
         except ImportError:
@@ -36,77 +27,119 @@ def ensure_dependencies():
             subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
 
 
-def download_audio(video_url, output_path):
-    """Download audio from YouTube video using yt-dlp."""
-    import yt_dlp
-    from tqdm import tqdm
+def parse_webvtt_time(time_str):
+    """Parse WebVTT time format (HH:MM:SS.mmm) to seconds."""
+    # Handle both HH:MM:SS.mmm and MM:SS.mmm formats
+    parts = time_str.split(':')
+    if len(parts) == 3:
+        hours, minutes, seconds = parts
+        total_seconds = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    elif len(parts) == 2:
+        minutes, seconds = parts
+        total_seconds = int(minutes) * 60 + float(seconds)
+    else:
+        total_seconds = float(parts[0])
     
-    class TqdmProgressHook:
-        def __init__(self):
-            self.pbar = None
+    return total_seconds
+
+
+def parse_webvtt_content(content):
+    """Parse WebVTT subtitle content into segments."""
+    segments = []
+    lines = content.split('\n')
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        
+        # Skip empty lines and WEBVTT header
+        if not line or line.startswith('WEBVTT') or line.startswith('NOTE'):
+            i += 1
+            continue
             
-        def __call__(self, d):
-            if d['status'] == 'downloading':
-                if self.pbar is None:
-                    total = d.get('total_bytes') or d.get('total_bytes_estimate')
-                    if total:
-                        self.pbar = tqdm(total=total, unit='B', unit_scale=True, desc="Downloading audio")
+        # Look for timestamp lines (format: start --> end)
+        if '-->' in line:
+            # Parse timestamp
+            timestamp_match = re.match(r'([0-9:.,]+)\s*-->\s*([0-9:.,]+)', line)
+            if timestamp_match:
+                start_time = parse_webvtt_time(timestamp_match.group(1).replace(',', '.'))
+                end_time = parse_webvtt_time(timestamp_match.group(2).replace(',', '.'))
                 
-                if self.pbar and 'downloaded_bytes' in d:
-                    self.pbar.update(d['downloaded_bytes'] - self.pbar.n)
+                # Collect subtitle text (may span multiple lines)
+                i += 1
+                text_lines = []
+                while i < len(lines) and lines[i].strip() and '-->' not in lines[i]:
+                    text_line = lines[i].strip()
+                    # Remove HTML tags and clean up text
+                    text_line = re.sub(r'<[^>]+>', '', text_line)
+                    if text_line:
+                        text_lines.append(text_line)
+                    i += 1
+                
+                if text_lines:
+                    segments.append({
+                        "start": start_time,
+                        "end": end_time,
+                        "text": " ".join(text_lines)
+                    })
                     
-            elif d['status'] == 'finished':
-                if self.pbar:
-                    self.pbar.close()
-                print("Download completed, extracting audio...", file=sys.stderr)
+                continue
+        
+        i += 1
     
-    progress_hook = TqdmProgressHook()
+    return segments
+
+
+def extract_subtitles(video_url, temp_dir):
+    """Extract subtitles from YouTube video using yt-dlp."""
+    import yt_dlp  # type: ignore
     
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': str(output_path),
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'wav',
-        }],
+    # Set up output template for subtitles
+    subtitle_template = str(Path(temp_dir) / "%(title)s.%(ext)s")
+    
+    print("Extracting video info and subtitles...", file=sys.stderr)
+    
+    # Use yt-dlp to extract subtitles only
+    ydl = yt_dlp.YoutubeDL({  # type: ignore
+        'writesubtitles': True,
+        'writeautomaticsubs': True, 
+        'subtitleslangs': ['en'],
+        'skip_download': True,
+        'outtmpl': subtitle_template,
         'quiet': True,
         'no_warnings': True,
-        'progress_hooks': [progress_hook],
+    })
+    
+    info = ydl.extract_info(video_url, download=True)
+    
+    title = info.get('title', 'Unknown Title')
+    language = info.get('language', 'en')
+    
+    # Find downloaded subtitle files
+    subtitle_files = list(Path(temp_dir).glob("*.vtt"))
+    
+    if not subtitle_files:
+        raise Exception("No subtitle files found. This video may not have subtitles available.")
+    
+    # Prefer manual subtitles over auto-generated ones
+    manual_subs = [f for f in subtitle_files if '.en.' in f.name and not '.auto.' in f.name]
+    auto_subs = [f for f in subtitle_files if '.auto.' in f.name or ('.en.' in f.name)]
+    
+    subtitle_file = manual_subs[0] if manual_subs else (auto_subs[0] if auto_subs else subtitle_files[0])
+    
+    print(f"Using subtitle file: {subtitle_file.name}", file=sys.stderr)
+    
+    # Read and parse subtitle content
+    with open(subtitle_file, 'r', encoding='utf-8') as f:
+        subtitle_content = f.read()
+    
+    segments = parse_webvtt_content(subtitle_content)
+    
+    return {
+        "title": title,
+        "language": language,
+        "segments": segments
     }
-    
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(video_url, download=True)
-        return info.get('title', 'Unknown Title')
-
-
-def transcribe_audio(audio_path, model_size="base"):
-    """Transcribe audio file using faster-whisper with timing information."""
-    from faster_whisper import WhisperModel
-    from tqdm import tqdm
-    
-    print("Loading Whisper model...", file=sys.stderr)
-    model = WhisperModel(model_size, device="cpu", compute_type="int8")
-    
-    print("Starting transcription...", file=sys.stderr)
-    segments, info = model.transcribe(audio_path, beam_size=5)
-    
-    transcription = {
-        "title": "",
-        "language": info.language,
-        "segments": []
-    }
-    
-    # Convert segments to list first to get progress bar
-    segments_list = list(segments)
-    
-    for segment in tqdm(segments_list, desc="Processing segments"):
-        transcription["segments"].append({
-            "start": segment.start,
-            "end": segment.end,
-            "text": segment.text.strip()
-        })
-    
-    return transcription
 
 
 def main():
@@ -117,68 +150,12 @@ def main():
     video_url = sys.argv[1]
     
     try:
-        from tqdm import tqdm
-        
-        # Overall progress tracking
-        stages = [
-            "Installing dependencies",
-            "Downloading audio", 
-            "Transcribing audio",
-            "Finalizing output"
-        ]
-        
-        with tqdm(total=len(stages), desc="Overall progress") as pbar:
-            # Ensure dependencies are installed
-            pbar.set_description("Installing dependencies")
-            ensure_dependencies()
-            pbar.update(1)
-            
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Download audio
-                pbar.set_description("Downloading audio")
-                audio_path = Path(temp_dir) / "audio.%(ext)s"
-                title = download_audio(video_url, audio_path)
-                pbar.update(1)
-                
-                # Find the actual audio file (yt-dlp adds extension)
-                audio_files = list(Path(temp_dir).glob("audio.*"))
-                if not audio_files:
-                    raise Exception("No audio file found after download")
-                
-                actual_audio_path = audio_files[0]
-                print(f"Audio downloaded: {actual_audio_path}", file=sys.stderr)
-                
-                # Transcribe
-                pbar.set_description("Transcribing audio")
-                transcription = transcribe_audio(actual_audio_path)
-                transcription["title"] = title
-                pbar.update(1)
-                
-                # Output as JSON
-                pbar.set_description("Finalizing output")
-                print(json.dumps(transcription, indent=2))
-                pbar.update(1)
-                
-    except ImportError:
-        # Fallback if tqdm is not available yet
         print("Installing dependencies...", file=sys.stderr)
         ensure_dependencies()
         
         with tempfile.TemporaryDirectory() as temp_dir:
-            print("Downloading audio...", file=sys.stderr)
-            audio_path = Path(temp_dir) / "audio.%(ext)s"
-            title = download_audio(video_url, audio_path)
-            
-            audio_files = list(Path(temp_dir).glob("audio.*"))
-            if not audio_files:
-                raise Exception("No audio file found after download")
-            
-            actual_audio_path = audio_files[0]
-            print(f"Audio downloaded: {actual_audio_path}", file=sys.stderr)
-            
-            print("Starting transcription...", file=sys.stderr)
-            transcription = transcribe_audio(actual_audio_path)
-            transcription["title"] = title
+            print("Extracting subtitles...", file=sys.stderr)
+            transcription = extract_subtitles(video_url, temp_dir)
             
             print(json.dumps(transcription, indent=2))
             
