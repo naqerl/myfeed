@@ -100,17 +100,25 @@ def extract_subtitles(video_url, temp_dir):
     print("Extracting video info and subtitles...", file=sys.stderr)
     
     # Use yt-dlp to extract subtitles only
-    ydl = yt_dlp.YoutubeDL({  # type: ignore
-        'writesubtitles': True,
-        'writeautomaticsubs': True, 
-        'subtitleslangs': ['en'],
-        'skip_download': True,
-        'outtmpl': subtitle_template,
-        'quiet': True,
-        'no_warnings': True,
-    })
+    import os
+    import contextlib
     
-    info = ydl.extract_info(video_url, download=True)
+    # Redirect stdout and stderr to capture any unwanted output from yt-dlp
+    with open(os.devnull, 'w') as devnull:
+        with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+            ydl = yt_dlp.YoutubeDL({  # type: ignore
+                'writesubtitles': True,
+                'writeautomaticsubs': True, 
+                'subtitleslangs': ['en'],
+                'skip_download': True,
+                'outtmpl': subtitle_template,
+                'quiet': True,
+                'no_warnings': True,
+                'no_color': True,
+                'extract_flat': False,
+            })
+            
+            info = ydl.extract_info(video_url, download=True)
     
     title = info.get('title', 'Unknown Title')
     language = info.get('language', 'en')
