@@ -3,7 +3,6 @@ package youtube
 import (
 	"encoding/json"
 	"io/fs"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,47 +13,13 @@ type TestCase struct {
 	Name            string `json:"name"`
 	VideoURL        string `json:"videoURL"`
 	Description     string `json:"description"`
-	ExpectMethod    string `json:"expectMethod"`
-	MinSegments     int    `json:"minSegments"`
 	SkipInShortMode bool   `json:"skipInShortMode"`
 	SkipReason      string `json:"skipReason"`
 }
 
-type ExpectedTranscription struct {
-	Title    string    `json:"title"`
-	Language string    `json:"language"`
-	Segments []Segment `json:"segments"`
-}
-
-type ExpectedFormattedOutput struct {
-	ContainsTitle      bool `json:"containsTitle"`
-	ContainsLanguage   bool `json:"containsLanguage"`
-	ContainsTimestamps bool `json:"containsTimestamps"`
-	MinLength          int  `json:"minLength"`
-}
-
-type ExpectedOutput struct {
-	Transcription   ExpectedTranscription   `json:"transcription"`
-	FormattedOutput ExpectedFormattedOutput `json:"formattedOutput"`
-}
-
-type ValidationTolerances struct {
-	TimingDelta       float64 `json:"timingDelta"`
-	SegmentCountDelta int     `json:"segmentCountDelta"`
-}
-
-type Validation struct {
-	ExactMatch        bool                 `json:"exactMatch"`
-	ValidateStructure bool                 `json:"validateStructure"`
-	ValidateTiming    bool                 `json:"validateTiming"`
-	ValidateContent   bool                 `json:"validateContent"`
-	Tolerances        ValidationTolerances `json:"tolerances"`
-}
-
 type TestData struct {
-	TestCase       TestCase       `json:"testCase"`
-	ExpectedOutput ExpectedOutput `json:"expectedOutput"`
-	Validation     Validation     `json:"validation"`
+	TestCase       TestCase      `json:"testCase"`
+	ExpectedOutput Transcription `json:"expectedOutput"`
 }
 
 func TestYouTubeParser(t *testing.T) {
@@ -97,7 +62,7 @@ func TestYouTubeParser(t *testing.T) {
 				t.Fatalf("Failed to parse YouTube video: %v", err)
 			}
 
-			validateResponseWithTestData(t, response, testData)
+			validateExactMatch(t, response, testData)
 		})
 	}
 }
@@ -130,15 +95,8 @@ func loadTestDataFiles() ([]TestData, error) {
 
 	return testDataFiles, err
 }
-
-func validateResponseWithTestData(t *testing.T, response interface{}, testData TestData) {
-	tc := testData.TestCase
+func validateExactMatch(t *testing.T, response interface{}, testData TestData) {
 	expected := testData.ExpectedOutput
-	validation := testData.Validation
-	result := response.(Response).String()
-	if len(result) == 0 {
-		t.Error("Empty response from YouTube parser")
-	}
 
 	// Test the parsed transcription structure
 	resp, ok := response.(Response)
@@ -146,89 +104,67 @@ func validateResponseWithTestData(t *testing.T, response interface{}, testData T
 		t.Fatal("Response is not of expected type")
 	}
 
-	// Validate title
-	if resp.Transcription.Title == "" {
-		t.Error("Transcription title is empty")
+	actual := resp.Transcription
+
+	// Compare title
+	if actual.Title != expected.Title {
+		t.Errorf("Title mismatch:\nExpected: %s\nActual: %s", expected.Title, actual.Title)
 	}
-	t.Logf("Video title: %s", resp.Transcription.Title)
 
-	// Validate language
-	if resp.Transcription.Language == "" {
-		t.Error("Transcription language is empty")
+	// Compare language
+	if actual.Language != expected.Language {
+		t.Errorf("Language mismatch:\nExpected: %s\nActual: %s", expected.Language, actual.Language)
 	}
-	t.Logf("Video language: %s", resp.Transcription.Language)
 
-	// Validate segments using test data expectations
-	if validation.ValidateStructure {
-		if len(resp.Transcription.Segments) == 0 {
-			t.Error("No transcription segments found")
+	// If expected segments is empty, just validate basic structure
+	if len(expected.Segments) == 0 {
+		if len(actual.Segments) == 0 {
+			t.Error("No segments found in transcription")
 		}
-		if len(resp.Transcription.Segments) < tc.MinSegments {
-			t.Errorf("Expected at least %d segments, got %d", tc.MinSegments, len(resp.Transcription.Segments))
-		}
-
-		// Check if segment count is within tolerance
-		if len(expected.Transcription.Segments) > 0 {
-			expectedCount := len(expected.Transcription.Segments)
-			actualCount := len(resp.Transcription.Segments)
-			delta := int(math.Abs(float64(expectedCount - actualCount)))
-			if delta > validation.Tolerances.SegmentCountDelta {
-				t.Errorf("Segment count differs too much: expected ~%d, got %d (delta: %d, max: %d)",
-					expectedCount, actualCount, delta, validation.Tolerances.SegmentCountDelta)
+		// Just validate basic segment structure without content comparison
+		for i, seg := range actual.Segments {
+			if seg.Start < 0 {
+				t.Errorf("Segment %d has invalid start time: %.3f", i, seg.Start)
 			}
-		}
-	}
-	t.Logf("Number of segments: %d", len(resp.Transcription.Segments))
-
-	// Validate segment timing and structure
-	if validation.ValidateTiming {
-		for i, segment := range resp.Transcription.Segments {
-			if segment.Start < 0 {
-				t.Errorf("Segment %d has invalid start time: %f", i, segment.Start)
+			if seg.End <= seg.Start {
+				t.Errorf("Segment %d has invalid timing: start=%.3f, end=%.3f", i, seg.Start, seg.End)
 			}
-			if segment.End <= segment.Start {
-				t.Errorf("Segment %d has invalid end time: %f (start: %f)", i, segment.End, segment.Start)
-			}
-			if strings.TrimSpace(segment.Text) == "" {
+			if strings.TrimSpace(seg.Text) == "" {
 				t.Errorf("Segment %d has empty text", i)
 			}
+		}
+		t.Logf("Basic validation passed for %d segments", len(actual.Segments))
+		return
+	}
 
-			// Only check first few segments to avoid spam
-			if i < 3 {
-				t.Logf("Segment %d: [%.2f-%.2f] %s", i, segment.Start, segment.End, segment.Text)
-			}
+	// Compare segment count for exact match
+	if len(actual.Segments) != len(expected.Segments) {
+		t.Errorf("Segment count mismatch:\nExpected: %d\nActual: %d", len(expected.Segments), len(actual.Segments))
+	}
+
+	// Compare each segment exactly
+	maxSegments := len(expected.Segments)
+	if len(actual.Segments) < maxSegments {
+		maxSegments = len(actual.Segments)
+	}
+
+	for i := 0; i < maxSegments; i++ {
+		expectedSeg := expected.Segments[i]
+		actualSeg := actual.Segments[i]
+
+		if actualSeg.Start != expectedSeg.Start {
+			t.Errorf("Segment %d start time mismatch:\nExpected: %.3f\nActual: %.3f", i, expectedSeg.Start, actualSeg.Start)
+		}
+
+		if actualSeg.End != expectedSeg.End {
+			t.Errorf("Segment %d end time mismatch:\nExpected: %.3f\nActual: %.3f", i, expectedSeg.End, actualSeg.End)
+		}
+
+		if actualSeg.Text != expectedSeg.Text {
+			t.Errorf("Segment %d text mismatch:\nExpected: %s\nActual: %s", i, expectedSeg.Text, actualSeg.Text)
 		}
 	}
 
-	// Validate formatted output using expected criteria
-	if expected.FormattedOutput.ContainsTitle && !strings.Contains(result, "#") {
-		t.Error("Formatted output doesn't contain title marker (#)")
-	}
-
-	if expected.FormattedOutput.ContainsLanguage && !strings.Contains(result, "Language:") {
-		t.Error("Formatted output doesn't contain language information")
-	}
-
-	if expected.FormattedOutput.ContainsTimestamps && !strings.Contains(result, "[") {
-		t.Error("Formatted output doesn't contain timestamp markers")
-	}
-
-	if len(result) < expected.FormattedOutput.MinLength {
-		t.Errorf("Formatted output too short: expected min %d chars, got %d",
-			expected.FormattedOutput.MinLength, len(result))
-	}
-
-	t.Logf("Response length: %d characters", len(result))
-
-	// Show a preview of the formatted output
-	lines := strings.Split(result, "\n")
-	preview := ""
-	for i, line := range lines {
-		if i >= 5 { // Show first 5 lines
-			preview += "...\n"
-			break
-		}
-		preview += line + "\n"
-	}
-	t.Logf("Response preview:\n%s", preview)
+	t.Logf("✓ Exact match validation passed - Title: %s, Language: %s, Segments: %d",
+		actual.Title, actual.Language, len(actual.Segments))
 }

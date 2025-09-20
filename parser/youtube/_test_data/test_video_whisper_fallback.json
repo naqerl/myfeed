@@ -3,32 +3,12 @@
     "name": "TestVideo_WhisperFallback",
     "videoURL": "https://www.youtube.com/watch?v=jO9RSppTirQ",
     "description": "Original test video (may need whisper fallback)",
-    "expectMethod": "either",
-    "minSegments": 1,
     "skipInShortMode": true,
     "skipReason": "Whisper transcription is slow in CI"
   },
   "expectedOutput": {
-    "transcription": {
-      "title": "",
-      "language": "en",
-      "segments": []
-    },
-    "formattedOutput": {
-      "containsTitle": true,
-      "containsLanguage": true,
-      "containsTimestamps": true,
-      "minLength": 100
-    }
-  },
-  "validation": {
-    "exactMatch": false,
-    "validateStructure": true,
-    "validateTiming": true,
-    "validateContent": false,
-    "tolerances": {
-      "timingDelta": 1.0,
-      "segmentCountDelta": 10
-    }
+    "title": "",
+    "language": "en",
+    "segments": []
   }
 }

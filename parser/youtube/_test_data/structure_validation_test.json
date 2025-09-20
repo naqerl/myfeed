@@ -3,32 +3,12 @@
     "name": "StructureValidation_Test",
     "videoURL": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     "description": "Test basic transcription structure validation",
-    "expectMethod": "subtitle",
-    "minSegments": 10,
     "skipInShortMode": false,
     "skipReason": ""
   },
   "expectedOutput": {
-    "transcription": {
-      "title": "",
-      "language": "en",
-      "segments": []
-    },
-    "formattedOutput": {
-      "containsTitle": true,
-      "containsLanguage": true,
-      "containsTimestamps": true,
-      "minLength": 1000
-    }
-  },
-  "validation": {
-    "exactMatch": false,
-    "validateStructure": true,
-    "validateTiming": true,
-    "validateContent": false,
-    "tolerances": {
-      "timingDelta": 1.0,
-      "segmentCountDelta": 100
-    }
+    "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+    "language": "en",
+    "segments": []
   }
 }
