@@ -14,9 +14,10 @@ from pathlib import Path
 
 
 def ensure_dependencies():
-    """Ensure yt-dlp is installed."""
+    """Ensure yt-dlp and faster-whisper are installed."""
     packages_to_check = [
         ("yt_dlp", "yt-dlp"),
+        ("faster_whisper", "faster-whisper"),
     ]
     
     for module_name, package_name in packages_to_check:
@@ -150,6 +151,97 @@ def extract_subtitles(video_url, temp_dir):
     }
 
 
+def download_audio(video_url, output_path):
+    """Download audio from YouTube video using yt-dlp."""
+    import yt_dlp  # type: ignore
+    import os
+    import contextlib
+    
+    # Redirect stdout and stderr to capture any unwanted output from yt-dlp
+    with open(os.devnull, 'w') as devnull:
+        with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+            ydl = yt_dlp.YoutubeDL({  # type: ignore
+                'format': 'bestaudio/best',
+                'outtmpl': str(output_path),
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'wav',
+                }],
+                'quiet': True,
+                'no_warnings': True,
+                'no_color': True,
+            })
+            
+            info = ydl.extract_info(video_url, download=True)
+            return info.get('title', 'Unknown Title')
+
+
+def transcribe_audio(audio_path, model_size="tiny"):
+    """Transcribe audio file using faster-whisper with timing information."""
+    from faster_whisper import WhisperModel  # type: ignore
+    
+    print("Loading Whisper model...", file=sys.stderr)
+    model = WhisperModel(model_size, device="cpu", compute_type="int8")
+    
+    print("Starting transcription...", file=sys.stderr)
+    segments, info = model.transcribe(audio_path, beam_size=5)
+    
+    transcription = {
+        "title": "",
+        "language": info.language,
+        "segments": []
+    }
+    
+    # Convert segments to list and process
+    segments_list = list(segments)
+    
+    for segment in segments_list:
+        transcription["segments"].append({
+            "start": segment.start,
+            "end": segment.end,
+            "text": segment.text.strip()
+        })
+    
+    return transcription
+
+
+def extract_with_fallback(video_url, temp_dir):
+    """Extract subtitles first, fallback to audio transcription if needed."""
+    print("Attempting subtitle extraction...", file=sys.stderr)
+    
+    try:
+        # Try subtitle extraction first
+        result = extract_subtitles(video_url, temp_dir)
+        print("✓ Subtitle extraction successful", file=sys.stderr)
+        return result
+    except Exception as subtitle_error:
+        print(f"Subtitle extraction failed: {subtitle_error}", file=sys.stderr)
+        print("Falling back to audio transcription...", file=sys.stderr)
+        
+        try:
+            # Fallback to audio transcription
+            audio_path = Path(temp_dir) / "audio.%(ext)s"
+            title = download_audio(video_url, audio_path)
+            
+            # Find the actual audio file (yt-dlp adds extension)
+            audio_files = list(Path(temp_dir).glob("audio.*"))
+            if not audio_files:
+                raise Exception("No audio file found after download")
+            
+            actual_audio_path = audio_files[0]
+            print(f"Audio downloaded: {actual_audio_path}", file=sys.stderr)
+            
+            # Transcribe
+            transcription = transcribe_audio(actual_audio_path)
+            transcription["title"] = title
+            
+            print("✓ Audio transcription successful", file=sys.stderr)
+            return transcription
+            
+        except Exception as audio_error:
+            raise Exception(f"Both subtitle extraction and audio transcription failed. Subtitle error: {subtitle_error}. Audio error: {audio_error}")
+
+
 def main():
     if len(sys.argv) != 2:
         print("Usage: transcribe.py <youtube_url>", file=sys.stderr)
@@ -162,9 +254,10 @@ def main():
         ensure_dependencies()
         
         with tempfile.TemporaryDirectory() as temp_dir:
-            print("Extracting subtitles...", file=sys.stderr)
-            transcription = extract_subtitles(video_url, temp_dir)
+            print("Processing video with hybrid approach...", file=sys.stderr)
+            transcription = extract_with_fallback(video_url, temp_dir)
             
+            # Output clean JSON (dependencies should already be installed)
             print(json.dumps(transcription, indent=2))
             
     except Exception as e:

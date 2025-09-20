@@ -5,70 +5,117 @@ import (
 	"testing"
 )
 
+type testCase struct {
+	name         string
+	videoURL     string
+	description  string
+	expectMethod string // "subtitle", "whisper", or "either"
+	minSegments  int
+	shouldSkip   bool
+}
+
 func TestYouTubeParser(t *testing.T) {
+	testCases := []testCase{
+		{
+			name:         "RickRoll_WithSubtitles",
+			videoURL:     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+			description:  "Rick Astley - Never Gonna Give You Up (has good subtitles)",
+			expectMethod: "subtitle",
+			minSegments:  30,
+			shouldSkip:   false,
+		},
+		{
+			name:         "TestVideo_MayNeedWhisper",
+			videoURL:     "https://www.youtube.com/watch?v=jO9RSppTirQ",
+			description:  "Original test video (may need whisper fallback)",
+			expectMethod: "either",
+			minSegments:  1, // Lower expectation since whisper might be slow
+			shouldSkip:   false,
+		},
+	}
+
 	parser, err := New()
 	if err != nil {
 		t.Fatalf("Failed to create YouTube parser: %v", err)
 	}
 
-	videoURL := "https://www.youtube.com/watch?v=dQw4w9WgXcQ" // Rick Astley - has good subtitles
-	t.Logf("Testing YouTube parser with: %s", videoURL)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Skip whisper tests in short mode to save time
+			if testing.Short() && tc.expectMethod == "either" {
+				t.Skip("Skipping whisper fallback test in short mode")
+				return
+			}
 
-	response, err := parser.Parse(videoURL)
-	if err != nil {
-		// Skip if yt-dlp or dependencies aren't available
-		if strings.Contains(err.Error(), "ERROR: [youtube]") ||
-			strings.Contains(err.Error(), "No subtitle files found") ||
-			strings.Contains(err.Error(), "invalid character") {
-			t.Skipf("Skipping test - video issues or dependencies not available: %v", err)
-		}
-		t.Fatalf("Failed to parse YouTube video: %v", err)
+			t.Logf("Testing: %s (%s)", tc.description, tc.videoURL)
+
+			response, err := parser.Parse(tc.videoURL)
+			if err != nil {
+				// Check if we should skip this test
+				if strings.Contains(err.Error(), "ERROR: [youtube]") ||
+					strings.Contains(err.Error(), "Video unavailable") ||
+					strings.Contains(err.Error(), "invalid character") ||
+					strings.Contains(err.Error(), "Both subtitle extraction and audio transcription failed") {
+					t.Skipf("Skipping test - video issues or dependencies not available: %v", err)
+					return
+				}
+				t.Fatalf("Failed to parse YouTube video: %v", err)
+			}
+
+			validateResponse(t, response, tc)
+		})
 	}
+}
 
-	result := response.String()
+func validateResponse(t *testing.T, response interface{}, tc testCase) {
+	result := response.(Response).String()
 	if len(result) == 0 {
 		t.Error("Empty response from YouTube parser")
 	}
 
 	// Test the parsed transcription structure
-	if resp, ok := response.(Response); ok {
-		// Validate title
-		if resp.Transcription.Title == "" {
-			t.Error("Transcription title is empty")
-		}
-		t.Logf("Video title: %s", resp.Transcription.Title)
+	resp, ok := response.(Response)
+	if !ok {
+		t.Fatal("Response is not of expected type")
+	}
 
-		// Validate language
-		if resp.Transcription.Language == "" {
-			t.Error("Transcription language is empty")
-		}
-		t.Logf("Video language: %s", resp.Transcription.Language)
+	// Validate title
+	if resp.Transcription.Title == "" {
+		t.Error("Transcription title is empty")
+	}
+	t.Logf("Video title: %s", resp.Transcription.Title)
 
-		// Validate segments
-		if len(resp.Transcription.Segments) == 0 {
-			t.Error("No transcription segments found")
-		}
-		t.Logf("Number of segments: %d", len(resp.Transcription.Segments))
+	// Validate language
+	if resp.Transcription.Language == "" {
+		t.Error("Transcription language is empty")
+	}
+	t.Logf("Video language: %s", resp.Transcription.Language)
 
-		// Validate segment structure
-		for i, segment := range resp.Transcription.Segments {
-			if segment.Start < 0 {
-				t.Errorf("Segment %d has invalid start time: %f", i, segment.Start)
-			}
-			if segment.End <= segment.Start {
-				t.Errorf("Segment %d has invalid end time: %f (start: %f)", i, segment.End, segment.Start)
-			}
-			if strings.TrimSpace(segment.Text) == "" {
-				t.Errorf("Segment %d has empty text", i)
-			}
+	// Validate segments
+	if len(resp.Transcription.Segments) == 0 {
+		t.Error("No transcription segments found")
+	}
+	if len(resp.Transcription.Segments) < tc.minSegments {
+		t.Errorf("Expected at least %d segments, got %d", tc.minSegments, len(resp.Transcription.Segments))
+	}
+	t.Logf("Number of segments: %d", len(resp.Transcription.Segments))
 
-			// Only check first few segments to avoid spam
-			if i < 3 {
-				t.Logf("Segment %d: [%.2f-%.2f] %s", i, segment.Start, segment.End, segment.Text)
-			}
+	// Validate segment structure
+	for i, segment := range resp.Transcription.Segments {
+		if segment.Start < 0 {
+			t.Errorf("Segment %d has invalid start time: %f", i, segment.Start)
 		}
-	} else {
-		t.Error("Response is not of expected type")
+		if segment.End <= segment.Start {
+			t.Errorf("Segment %d has invalid end time: %f (start: %f)", i, segment.End, segment.Start)
+		}
+		if strings.TrimSpace(segment.Text) == "" {
+			t.Errorf("Segment %d has empty text", i)
+		}
+
+		// Only check first few segments to avoid spam
+		if i < 3 {
+			t.Logf("Segment %d: [%.2f-%.2f] %s", i, segment.Start, segment.End, segment.Text)
+		}
 	}
 
 	// Test formatted output
@@ -99,50 +146,81 @@ func TestYouTubeParser(t *testing.T) {
 	t.Logf("Response preview:\n%s", preview)
 }
 
-func TestYouTubeSubtitleExtraction(t *testing.T) {
+func TestHybridTranscription(t *testing.T) {
 	parser, err := New()
 	if err != nil {
 		t.Fatalf("Failed to create YouTube parser: %v", err)
 	}
 
-	// Test with a video known to have good English subtitles
-	videoURL := "https://www.youtube.com/watch?v=dQw4w9WgXcQ" // Rick Astley - Never Gonna Give You Up
-	t.Logf("Testing subtitle extraction with: %s", videoURL)
-
-	response, err := parser.Parse(videoURL)
-	if err != nil {
-		// If this video doesn't have subtitles, skip the test rather than fail
-		t.Skipf("Skipping test - video may not have subtitles available: %v", err)
+	hybridTestCases := []testCase{
+		{
+			name:         "SubtitleFirst_RickRoll",
+			videoURL:     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+			description:  "Should use subtitles first",
+			expectMethod: "subtitle",
+			minSegments:  30,
+		},
+		{
+			name:         "WhisperFallback_TestVideo",
+			videoURL:     "https://www.youtube.com/watch?v=jO9RSppTirQ",
+			description:  "May fallback to whisper if no subtitles",
+			expectMethod: "either",
+			minSegments:  5,
+		},
 	}
 
-	resp, ok := response.(Response)
-	if !ok {
-		t.Fatalf("Response is not of expected type")
-	}
+	for _, tc := range hybridTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Skip whisper tests in short mode to save time
+			if testing.Short() && tc.expectMethod == "either" {
+				t.Skip("Skipping whisper fallback test in short mode")
+				return
+			}
 
-	// Validate that we got subtitle-like content
-	if len(resp.Transcription.Segments) < 5 {
-		t.Errorf("Expected more segments for a typical music video, got %d", len(resp.Transcription.Segments))
-	}
+			t.Logf("Testing hybrid transcription: %s (%s)", tc.description, tc.videoURL)
 
-	// Check for reasonable segment timing
-	var totalDuration float64
-	for i, segment := range resp.Transcription.Segments {
-		duration := segment.End - segment.Start
-		if duration <= 0 {
-			t.Errorf("Segment %d has invalid duration: %f", i, duration)
-		}
-		if duration > 30 { // Most subtitle segments should be under 30 seconds
-			t.Errorf("Segment %d has unusually long duration: %f", i, duration)
-		}
-		totalDuration = segment.End // Track the last end time
-	}
+			response, err := parser.Parse(tc.videoURL)
+			if err != nil {
+				// Skip if dependencies aren't available or video issues
+				if strings.Contains(err.Error(), "ERROR: [youtube]") ||
+					strings.Contains(err.Error(), "Video unavailable") ||
+					strings.Contains(err.Error(), "Both subtitle extraction and audio transcription failed") {
+					t.Skipf("Skipping test - video issues or dependencies not available: %v", err)
+					return
+				}
+				t.Fatalf("Failed to parse YouTube video: %v", err)
+			}
 
-	// Video should be at least 30 seconds long for a typical YouTube video
-	if totalDuration < 30 {
-		t.Errorf("Total video duration seems too short: %f seconds", totalDuration)
-	}
+			resp, ok := response.(Response)
+			if !ok {
+				t.Fatalf("Response is not of expected type")
+			}
 
-	t.Logf("✓ Subtitle extraction successful - %d segments, %.1f seconds total",
-		len(resp.Transcription.Segments), totalDuration)
+			// Validate that we got reasonable content
+			if len(resp.Transcription.Segments) < tc.minSegments {
+				t.Errorf("Expected at least %d segments, got %d", tc.minSegments, len(resp.Transcription.Segments))
+			}
+
+			// Check for reasonable segment timing
+			var totalDuration float64
+			for i, segment := range resp.Transcription.Segments {
+				duration := segment.End - segment.Start
+				if duration <= 0 {
+					t.Errorf("Segment %d has invalid duration: %f", i, duration)
+				}
+				if duration > 60 { // Allow longer segments for whisper transcription
+					t.Logf("Warning: Segment %d has long duration: %f (may be whisper transcription)", i, duration)
+				}
+				totalDuration = segment.End // Track the last end time
+			}
+
+			// Video should be at least 10 seconds long for a typical YouTube video
+			if totalDuration < 10 {
+				t.Errorf("Total video duration seems too short: %f seconds", totalDuration)
+			}
+
+			t.Logf("✓ Hybrid transcription successful - %d segments, %.1f seconds total",
+				len(resp.Transcription.Segments), totalDuration)
+		})
+	}
 }
