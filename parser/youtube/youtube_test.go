@@ -113,35 +113,21 @@ func loadTestDataFiles() ([]TestData, error) {
 func parseExpectedSegment(rawSegment json.RawMessage) (ExpectedSegment, error) {
 	var seg ExpectedSegment
 
-	// Try to parse as a structured object first
-	if err := json.Unmarshal(rawSegment, &seg); err == nil {
-		return seg, nil
-	}
-
-	// Try to parse as a string in format "[MM:SS] text"
+	// Parse as a string in format "[HH:MM:SS] text"
 	var segmentStr string
 	if err := json.Unmarshal(rawSegment, &segmentStr); err != nil {
 		return seg, fmt.Errorf("failed to parse segment as string: %w", err)
 	}
 
-	// Parse timestamp format [HH:MM:SS] or [MM:SS]
+	// Parse timestamp format [HH:MM:SS] - standard format
 	timestampRegex := regexp.MustCompile(`\[(\d{2}):(\d{2}):(\d{2})\](.*)`)
-	if matches := timestampRegex.FindStringSubmatch(segmentStr); len(matches) == 4 {
+	matches := timestampRegex.FindStringSubmatch(segmentStr)
+	if len(matches) == 5 { // matches[0] = full match, [1-3] = groups, [4] = text
 		hours, _ := strconv.Atoi(matches[1])
 		minutes, _ := strconv.Atoi(matches[2])
 		seconds, _ := strconv.Atoi(matches[3])
 		seg.Start = float64(hours*3600 + minutes*60 + seconds)
 		seg.Text = strings.TrimSpace(matches[4])
-		seg.End = seg.Start + 2.0 // Default duration
-		return seg, nil
-	}
-
-	timestampRegex = regexp.MustCompile(`\[(\d{2}):(\d{2})\](.*)`)
-	if matches := timestampRegex.FindStringSubmatch(segmentStr); len(matches) == 3 {
-		minutes, _ := strconv.Atoi(matches[1])
-		seconds, _ := strconv.Atoi(matches[2])
-		seg.Start = float64(minutes*60 + seconds)
-		seg.Text = strings.TrimSpace(matches[3])
 		seg.End = seg.Start + 2.0 // Default duration
 		return seg, nil
 	}
