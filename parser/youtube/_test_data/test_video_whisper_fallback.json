@@ -4,7 +4,8 @@
     "videoURL": "https://www.youtube.com/watch?v=jO9RSppTirQ",
     "description": "May need whisper fallback",
     "skipInShortMode": true,
-    "skipReason": "Whisper transcription is slow in CI"
+    "skipReason": "Whisper transcription is slow in CI",
+    "similarityThreshold": 0.95
   },
   "expectedOutput": {
     "title": "",

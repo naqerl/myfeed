@@ -25,8 +25,5 @@ test-coverage:
 	go test -v -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
-test-build:
-	go test -c ./...
-
 check: fmt vet test-build
 	@echo "✓ All checks passed"

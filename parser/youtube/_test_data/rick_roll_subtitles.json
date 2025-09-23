@@ -4,7 +4,8 @@
     "videoURL": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     "description": "Structure validation test",
     "skipInShortMode": false,
-    "skipReason": ""
+    "skipReason": "",
+    "similarityThreshold": 0.95
   },
   "expectedOutput": {
     "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",

@@ -13,11 +13,12 @@ import (
 )
 
 type TestCase struct {
-	Name            string `json:"name"`
-	VideoURL        string `json:"videoURL"`
-	Description     string `json:"description"`
-	SkipInShortMode bool   `json:"skipInShortMode"`
-	SkipReason      string `json:"skipReason"`
+	Name                string  `json:"name"`
+	VideoURL            string  `json:"videoURL"`
+	Description         string  `json:"description"`
+	SkipInShortMode     bool    `json:"skipInShortMode"`
+	SkipReason          string  `json:"skipReason"`
+	SimilarityThreshold float64 `json:"similarityThreshold"`
 }
 
 type ExpectedSegment struct {
@@ -135,6 +136,53 @@ func parseExpectedSegment(rawSegment json.RawMessage) (ExpectedSegment, error) {
 	return seg, fmt.Errorf("failed to parse timestamp format: %s", segmentStr)
 }
 
+func calculateTextSimilarity(expected, actual []string) float64 {
+	// Join all text segments and normalize
+	expectedText := strings.ToLower(strings.Join(expected, " "))
+	actualText := strings.ToLower(strings.Join(actual, " "))
+
+	// Remove punctuation and extra whitespace for comparison
+	expectedText = regexp.MustCompile(`[^\w\s]`).ReplaceAllString(expectedText, "")
+	actualText = regexp.MustCompile(`[^\w\s]`).ReplaceAllString(actualText, "")
+	expectedText = regexp.MustCompile(`\s+`).ReplaceAllString(strings.TrimSpace(expectedText), " ")
+	actualText = regexp.MustCompile(`\s+`).ReplaceAllString(strings.TrimSpace(actualText), " ")
+
+	if expectedText == "" && actualText == "" {
+		return 1.0
+	}
+	if expectedText == "" || actualText == "" {
+		return 0.0
+	}
+
+	// Calculate similarity using length ratio and common words
+	expectedWords := strings.Fields(expectedText)
+	actualWords := strings.Fields(actualText)
+
+	// Length similarity (penalize significant length differences)
+	lengthRatio := float64(len(actualWords)) / float64(len(expectedWords))
+	if lengthRatio > 1.0 {
+		lengthRatio = 1.0 / lengthRatio
+	}
+
+	// Word overlap similarity
+	expectedWordSet := make(map[string]bool)
+	for _, word := range expectedWords {
+		expectedWordSet[word] = true
+	}
+
+	commonWords := 0
+	for _, word := range actualWords {
+		if expectedWordSet[word] {
+			commonWords++
+		}
+	}
+
+	wordSimilarity := float64(commonWords) / float64(len(expectedWords))
+
+	// Combine length and word similarities (weighted average)
+	return (lengthRatio*0.3 + wordSimilarity*0.7)
+}
+
 func validateExactMatch(t *testing.T, response any, testData TestData) {
 	expected := testData.ExpectedOutput
 
@@ -193,7 +241,32 @@ func validateExactMatch(t *testing.T, response any, testData TestData) {
 		t.Errorf("Segment count mismatch:\nExpected: %d\nActual: %d", len(expectedSegments), len(actual.Segments))
 	}
 
-	// Compare each segment exactly
+	// Calculate and check text similarity first (this is the main assertion we care about)
+	similarityThreshold := testData.TestCase.SimilarityThreshold
+	if similarityThreshold == 0 {
+		similarityThreshold = 0.95 // Default threshold
+	}
+
+	// Extract text from expected and actual segments
+	var expectedTexts, actualTexts []string
+	for _, seg := range expectedSegments {
+		expectedTexts = append(expectedTexts, seg.Text)
+	}
+	for _, seg := range actual.Segments {
+		actualTexts = append(actualTexts, seg.Text)
+	}
+
+	similarity := calculateTextSimilarity(expectedTexts, actualTexts)
+	if similarity < similarityThreshold {
+		t.Errorf("Text similarity too low:\nSimilarity: %.3f\nThreshold: %.3f\nExpected words: %d\nActual words: %d",
+			similarity, similarityThreshold,
+			len(strings.Fields(strings.Join(expectedTexts, " "))),
+			len(strings.Fields(strings.Join(actualTexts, " "))))
+	} else {
+		t.Logf("✓ Text similarity check passed: %.3f >= %.3f", similarity, similarityThreshold)
+	}
+
+	// Compare each segment exactly (for detailed validation feedback)
 	maxSegments := min(len(expectedSegments), len(actual.Segments))
 
 	for i := range maxSegments {
