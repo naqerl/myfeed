@@ -111,6 +111,7 @@ func loadTestDataFiles() ([]TestData, error) {
 
 	return testDataFiles, err
 }
+
 func parseExpectedSegment(rawSegment json.RawMessage) (ExpectedSegment, error) {
 	var seg ExpectedSegment
 
@@ -238,9 +239,6 @@ func validateExactMatch(t *testing.T, response any, testData TestData) {
 
 	// Calculate and check text similarity (main assertion)
 	similarityThreshold := testData.TestCase.SimilarityThreshold
-	if similarityThreshold == 0 {
-		similarityThreshold = 0.95 // Default threshold
-	}
 
 	// Extract text from expected and actual segments
 	var expectedTexts, actualTexts []string
@@ -258,9 +256,6 @@ func validateExactMatch(t *testing.T, response any, testData TestData) {
 			len(strings.Fields(strings.Join(expectedTexts, " "))),
 			len(strings.Fields(strings.Join(actualTexts, " "))))
 	} else {
-		t.Logf("✓ Text similarity check passed: %.3f >= %.3f", similarity, similarityThreshold)
+		t.Logf("Text similarity check passed: %.3f >= %.3f", similarity, similarityThreshold)
 	}
-
-	t.Logf("✓ Validation passed - Title: %s, Language: %s, Segments: %d",
-		actual.Title, actual.Language, len(actual.Segments))
 }

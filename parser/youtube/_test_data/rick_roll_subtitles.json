@@ -5,7 +5,7 @@
     "description": "Structure validation test",
     "skipInShortMode": false,
     "skipReason": "",
-    "similarityThreshold": 0.95
+    "similarityThreshold": 1.0
   },
   "expectedOutput": {
     "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
