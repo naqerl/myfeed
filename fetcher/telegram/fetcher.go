@@ -19,13 +19,19 @@ const (
 
 // TelegramFetcher fetches feeds from Telegram channels
 type TelegramFetcher struct {
-	configDir string
+	configDir   string
+	appID       int
+	appHash     string
+	phoneNumber string
 }
 
-// NewTelegramFetcher creates a new Telegram fetcher
-func NewTelegramFetcher(configDir string) *TelegramFetcher {
+// NewTelegramFetcher creates a new Telegram fetcher with provided credentials
+func NewTelegramFetcher(configDir string, appID int, appHash string, phoneNumber string) *TelegramFetcher {
 	return &TelegramFetcher{
-		configDir: configDir,
+		configDir:   configDir,
+		appID:       appID,
+		appHash:     appHash,
+		phoneNumber: phoneNumber,
 	}
 }
 
@@ -40,7 +46,7 @@ func (f *TelegramFetcher) Fetch(ctx context.Context, url string) (types.Feed, er
 	}
 
 	// Run with authenticated client
-	err = RunWithAuth(ctx, f.configDir, func(ctx context.Context, client *telegram.Client) error {
+	err = RunWithAuth(ctx, f.configDir, f.appID, f.appHash, f.phoneNumber, func(ctx context.Context, client *telegram.Client) error {
 		api := client.API()
 
 		// Resolve channel username

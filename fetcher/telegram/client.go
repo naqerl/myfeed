@@ -19,12 +19,7 @@ import (
 type ClientRunner func(ctx context.Context, client *telegram.Client) error
 
 // RunWithAuth creates a Telegram client, authenticates it, and runs the provided function
-func RunWithAuth(ctx context.Context, configDir string, runner ClientRunner) error {
-	// Load or prompt for credentials
-	creds, err := LoadOrPromptCredentials(configDir)
-	if err != nil {
-		return fmt.Errorf("failed to get credentials: %w", err)
-	}
+func RunWithAuth(ctx context.Context, configDir string, appID int, appHash string, phoneNumber string, runner ClientRunner) error {
 
 	// Set up session storage
 	sessionPath := filepath.Join(configDir, "telegram-session.json")
@@ -45,14 +40,14 @@ func RunWithAuth(ctx context.Context, configDir string, runner ClientRunner) err
 	config.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
 	logger, _ := config.Build()
 
-	client := telegram.NewClient(creds.AppID, creds.AppHash, telegram.Options{
+	client := telegram.NewClient(appID, appHash, telegram.Options{
 		SessionStorage: sessionStorage,
 		Logger:         logger,
 	})
 
 	// Create auth flow
 	flow := tdauth.NewFlow(
-		TerminalUserAuthenticator{PhoneNumber: creds.PhoneNumber},
+		TerminalUserAuthenticator{PhoneNumber: phoneNumber},
 		tdauth.SendCodeOptions{},
 	)
 
@@ -61,7 +56,7 @@ func RunWithAuth(ctx context.Context, configDir string, runner ClientRunner) err
 	slog.Info("Telegram will reject connections if your clock is out of sync")
 
 	// Run client with authentication
-	err = waiter.Run(ctx, func(ctx context.Context) error {
+	return waiter.Run(ctx, func(ctx context.Context) error {
 		slog.Info("waiter.Run callback started")
 		err := client.Run(ctx, func(ctx context.Context) error {
 			slog.Info("client.Run callback started, calling Auth().IfNecessary")
@@ -91,8 +86,4 @@ func RunWithAuth(ctx context.Context, configDir string, runner ClientRunner) err
 		}
 		return err
 	})
-	if err != nil {
-		slog.Error("waiter.Run failed", "error", err)
-	}
-	return err
 }
