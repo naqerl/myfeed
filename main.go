@@ -86,7 +86,8 @@ func main() {
 	for _, r := range conf.Resources {
 		resourceTypes = append(resourceTypes, r.T)
 	}
-	fetchers, err := fetcher.GetFetchers(resourceTypes)
+	configDir := path.Dir(cfgPath)
+	fetchers, err := fetcher.GetFetchers(resourceTypes, configDir)
 	if err != nil {
 		log.Fatalf("failed to initialize fetchers with %s", err)
 	}
@@ -96,7 +97,7 @@ func main() {
 	feeds := make([]*fetcher.Feed, len(conf.Resources))
 	for i, resource := range conf.Resources {
 		f := fetchers[resource.T]
-		feed, err := f.Fetch(resource.FeedURL)
+		feed, err := f.Fetch(ctx, resource.FeedURL)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("'%s' fetch failed with %w", resource.FeedURL, err))
 			continue
@@ -117,9 +118,18 @@ func main() {
 			continue
 		}
 		resource := conf.Resources[i]
-		parser := parsers[resource.ParserT]
+		p := parsers[resource.ParserT]
 		for _, item := range feed.Items {
-			data, err := parser.Parse(item.Link)
+			// For Telegram messages, pass the description (message content) instead of the link
+			// For other parsers (web, youtube), pass the link to fetch and parse
+			var parseInput string
+			if resource.ParserT == parser.Telegram {
+				parseInput = item.Description
+			} else {
+				parseInput = item.Link
+			}
+
+			data, err := p.Parse(parseInput)
 			if err != nil {
 				errs = append(errs, err)
 				continue

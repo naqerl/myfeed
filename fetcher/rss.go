@@ -1,10 +1,13 @@
 package fetcher
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/mmcdole/gofeed"
+
+	"github.com/scipunch/myfeed/fetcher/types"
 )
 
 // RSSFetcher fetches RSS feeds using gofeed
@@ -20,10 +23,10 @@ func NewRSSFetcher() *RSSFetcher {
 }
 
 // Fetch retrieves and parses an RSS feed from the given URL
-func (f *RSSFetcher) Fetch(url string) (Feed, error) {
-	var feed Feed
+func (f *RSSFetcher) Fetch(ctx context.Context, url string) (types.Feed, error) {
+	var feed types.Feed
 
-	gofeedFeed, err := f.parser.ParseURL(url)
+	gofeedFeed, err := f.parser.ParseURLWithContext(url, ctx)
 	if err != nil {
 		return feed, fmt.Errorf("failed to parse RSS feed: %w", err)
 	}
@@ -31,10 +34,10 @@ func (f *RSSFetcher) Fetch(url string) (Feed, error) {
 	// Convert gofeed.Feed to our custom Feed type
 	feed.Title = gofeedFeed.Title
 	feed.Description = gofeedFeed.Description
-	feed.Items = make([]FeedItem, 0, len(gofeedFeed.Items))
+	feed.Items = make([]types.FeedItem, 0, len(gofeedFeed.Items))
 
 	for _, item := range gofeedFeed.Items {
-		feedItem := FeedItem{
+		feedItem := types.FeedItem{
 			Title:       item.Title,
 			Link:        item.Link,
 			Description: item.Description,

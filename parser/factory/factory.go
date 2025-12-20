@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/scipunch/myfeed/parser"
+	tgparser "github.com/scipunch/myfeed/parser/telegram"
 	"github.com/scipunch/myfeed/parser/web"
 	"github.com/scipunch/myfeed/parser/youtube"
 )
@@ -22,6 +23,8 @@ func Init(types []parser.Type) (map[parser.Type]parser.Parser, error) {
 		switch parserT {
 		case parser.Web:
 			p, err = web.New()
+		case parser.Telegram:
+			p, err = tgparser.New()
 		case parser.YouTube:
 			p, err = youtube.New()
 		default:

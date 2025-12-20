@@ -1,23 +1,10 @@
 package fetcher
 
-import "time"
+import (
+	"github.com/scipunch/myfeed/fetcher/types"
+)
 
-// Feed represents a collection of items from a feed source
-type Feed struct {
-	Title       string
-	Description string
-	Items       []FeedItem
-}
-
-// FeedItem represents a single item in a feed
-type FeedItem struct {
-	Title       string
-	Link        string
-	Description string
-	Published   time.Time
-}
-
-// FeedFetcher is an interface for fetching feeds from different sources
-type FeedFetcher interface {
-	Fetch(url string) (Feed, error)
-}
+// Re-export types for convenience
+type Feed = types.Feed
+type FeedItem = types.FeedItem
+type FeedFetcher = types.FeedFetcher
