@@ -15,10 +15,10 @@ import (
 	"syscall"
 	"text/template"
 
-	"github.com/mmcdole/gofeed"
 	_ "modernc.org/sqlite"
 
 	"github.com/scipunch/myfeed/config"
+	"github.com/scipunch/myfeed/fetcher"
 	"github.com/scipunch/myfeed/parser"
 	"github.com/scipunch/myfeed/parser/factory"
 )
@@ -37,6 +37,7 @@ type Page struct {
 }
 
 func main() {
+	// TODO: Use embedded templates
 	t := template.Must(template.ParseGlob("templates/*.html"))
 
 	if os.Getenv("DEBUG") != "" {
@@ -80,24 +81,27 @@ func main() {
 		log.Fatalf("failed to initialize database schema with %v", err)
 	}
 
-	// Fetch configured RSS feeds
+	// Initialize fetchers
+	var resourceTypes []config.ResourceType
+	for _, r := range conf.Resources {
+		resourceTypes = append(resourceTypes, r.T)
+	}
+	fetchers, err := fetcher.GetFetchers(resourceTypes)
+	if err != nil {
+		log.Fatalf("failed to initialize fetchers with %s", err)
+	}
+
+	// Fetch configured feeds
 	var errs []error
-	feeds := make([]*gofeed.Feed, len(conf.Resources))
-	fp := gofeed.NewParser()
+	feeds := make([]*fetcher.Feed, len(conf.Resources))
 	for i, resource := range conf.Resources {
-		switch resource.T {
-		case config.RSS:
-			feed, err := fp.ParseURL(resource.FeedURL)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("'%s' parse failed with %w", resource.FeedURL, err))
-				continue
-			}
-			feeds[i] = feed
-		case config.TelegramChannel:
-			panic("TelegramChannel resource type not implemented yet")
-		default:
-			errs = append(errs, fmt.Errorf("unknown resource type: %s", resource.T))
+		f := fetchers[resource.T]
+		feed, err := f.Fetch(resource.FeedURL)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("'%s' fetch failed with %w", resource.FeedURL, err))
+			continue
 		}
+		feeds[i] = &feed
 	}
 	slog.Info("fetched feeds", "amount", len(feeds))
 	if len(errs) > 0 {
