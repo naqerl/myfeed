@@ -17,6 +17,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/scipunch/myfeed/agent"
 	"github.com/scipunch/myfeed/config"
 	"github.com/scipunch/myfeed/fetcher"
 	"github.com/scipunch/myfeed/parser"
@@ -57,6 +58,14 @@ func main() {
 	} else if err != nil {
 		log.Fatalf("failed to read config with %s", err)
 	}
+
+	// Load credentials
+	credPath := config.DefaultCredentialsPath()
+	creds, err := config.ReadCredentials(credPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Fatalf("failed to read credentials: %s", err)
+	}
+
 	var parserTypes []parser.Type
 	for _, r := range conf.Resources {
 		parserTypes = append(parserTypes, r.ParserT)
@@ -75,6 +84,23 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Initialize agents if any resource requires them
+	agentTypes := agent.CollectUniqueAgentTypes(conf.Resources)
+	var agents map[string]agent.Agent
+	if len(agentTypes) > 0 {
+		// Validate Gemini credentials
+		if !creds.Gemini.IsValid() {
+			log.Fatal("Gemini API key and model required for agents but not found in creds.toml")
+		}
+
+		// Initialize agents with fail-fast validation
+		agents, err = agent.InitAgents(ctx, agentTypes, creds.Gemini)
+		if err != nil {
+			log.Fatalf("failed to initialize agents: %s", err)
+		}
+		slog.Info("initialized agents", "types", agentTypes)
+	}
 
 	_, err = initDB(ctx, conf.DatabasePath)
 	if err != nil {
@@ -135,9 +161,32 @@ func main() {
 				continue
 			}
 			slog.Info("feed item parsed", "length", len(data.String()))
+
+			content := data.String()
+
+			// Apply agents if configured for this resource
+			for _, agentName := range resource.Agents {
+				agentInstance, ok := agents[agentName]
+				if !ok {
+					errs = append(errs, fmt.Errorf("agent '%s' not found", agentName))
+					continue
+				}
+
+				processed, err := agentInstance.Process(ctx, content)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("agent '%s' processing failed: %w", agentName, err))
+					slog.Error("agent processing failed, using original content", "agent", agentName, "error", err)
+					// Continue with original content on error
+					break
+				}
+
+				content = processed
+				slog.Info("content processed by agent", "agent", agentName, "original_length", len(data.String()), "processed_length", len(content))
+			}
+
 			newsletter.Pages = append(newsletter.Pages, Page{
 				Title:   item.Title,
-				Content: data.String(),
+				Content: content,
 			})
 		}
 	}
