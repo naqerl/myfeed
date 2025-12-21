@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"database/sql"
 	_ "embed"
 	"fmt"
@@ -16,9 +17,10 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
-// Cache provides caching for parser and agent outputs
+// Cache provides caching for parser and agent outputs using sqlc-generated queries
 type Cache struct {
-	db *sql.DB
+	db      *sql.DB
+	queries *Queries
 }
 
 // CacheStats contains cache statistics
@@ -46,19 +48,21 @@ func NewCache(dbPath string) (*Cache, error) {
 		return nil, fmt.Errorf("failed to initialize cache schema: %w", err)
 	}
 
-	return &Cache{db: db}, nil
+	return &Cache{
+		db:      db,
+		queries: New(db),
+	}, nil
 }
 
 // GetParserOutput retrieves cached parser output
 // Returns: (output, found, error)
 func (c *Cache) GetParserOutput(url, parserType string) ([]byte, bool, error) {
-	var output []byte
-	accessedAt := time.Now().Unix()
+	ctx := context.Background()
 
-	err := c.db.QueryRow(
-		"SELECT output_data FROM parser_cache WHERE url = ? AND parser_type = ?",
-		url, parserType,
-	).Scan(&output)
+	output, err := c.queries.GetParserOutput(ctx, GetParserOutputParams{
+		Url:        url,
+		ParserType: parserType,
+	})
 
 	if err == sql.ErrNoRows {
 		return nil, false, nil
@@ -69,23 +73,28 @@ func (c *Cache) GetParserOutput(url, parserType string) ([]byte, bool, error) {
 	}
 
 	// Update accessed_at
-	_, _ = c.db.Exec(
-		"UPDATE parser_cache SET accessed_at = ? WHERE url = ? AND parser_type = ?",
-		accessedAt, url, parserType,
-	)
+	accessedAt := time.Now().Unix()
+	_ = c.queries.UpdateParserAccessTime(ctx, UpdateParserAccessTimeParams{
+		AccessedAt: accessedAt,
+		Url:        url,
+		ParserType: parserType,
+	})
 
-	return output, true, nil
+	return []byte(output), true, nil
 }
 
 // SetParserOutput stores parser output in cache
 func (c *Cache) SetParserOutput(url, parserType string, output []byte) error {
+	ctx := context.Background()
 	now := time.Now().Unix()
 
-	_, err := c.db.Exec(`
-		INSERT OR REPLACE INTO parser_cache 
-		(url, parser_type, output_data, created_at, accessed_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, url, parserType, output, now, now)
+	err := c.queries.SetParserOutput(ctx, SetParserOutputParams{
+		Url:        url,
+		ParserType: parserType,
+		OutputData: string(output),
+		CreatedAt:  now,
+		AccessedAt: now,
+	})
 
 	if err != nil {
 		slog.Warn("parser cache write error", "error", err, "url", truncate(url, 50))
@@ -98,15 +107,14 @@ func (c *Cache) SetParserOutput(url, parserType string, output []byte) error {
 // GetAgentOutput retrieves cached agent output
 // agentPipeline should be slice of agent names (e.g., ["summary", "translate"])
 func (c *Cache) GetAgentOutput(url, parserType string, agentPipeline []string) (string, bool, error) {
+	ctx := context.Background()
 	pipeline := strings.Join(agentPipeline, ",")
 
-	var output string
-	accessedAt := time.Now().Unix()
-
-	err := c.db.QueryRow(
-		"SELECT output_data FROM agent_cache WHERE url = ? AND parser_type = ? AND agent_pipeline = ?",
-		url, parserType, pipeline,
-	).Scan(&output)
+	output, err := c.queries.GetAgentOutput(ctx, GetAgentOutputParams{
+		Url:           url,
+		ParserType:    parserType,
+		AgentPipeline: pipeline,
+	})
 
 	if err == sql.ErrNoRows {
 		return "", false, nil
@@ -117,24 +125,31 @@ func (c *Cache) GetAgentOutput(url, parserType string, agentPipeline []string) (
 	}
 
 	// Update accessed_at
-	_, _ = c.db.Exec(
-		"UPDATE agent_cache SET accessed_at = ? WHERE url = ? AND parser_type = ? AND agent_pipeline = ?",
-		accessedAt, url, parserType, pipeline,
-	)
+	accessedAt := time.Now().Unix()
+	_ = c.queries.UpdateAgentAccessTime(ctx, UpdateAgentAccessTimeParams{
+		AccessedAt:    accessedAt,
+		Url:           url,
+		ParserType:    parserType,
+		AgentPipeline: pipeline,
+	})
 
 	return output, true, nil
 }
 
 // SetAgentOutput stores agent output in cache
 func (c *Cache) SetAgentOutput(url, parserType string, agentPipeline []string, output string) error {
+	ctx := context.Background()
 	now := time.Now().Unix()
 	pipeline := strings.Join(agentPipeline, ",")
 
-	_, err := c.db.Exec(`
-		INSERT OR REPLACE INTO agent_cache
-		(url, parser_type, agent_pipeline, output_data, created_at, accessed_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, url, parserType, pipeline, output, now, now)
+	err := c.queries.SetAgentOutput(ctx, SetAgentOutputParams{
+		Url:           url,
+		ParserType:    parserType,
+		AgentPipeline: pipeline,
+		OutputData:    output,
+		CreatedAt:     now,
+		AccessedAt:    now,
+	})
 
 	if err != nil {
 		slog.Warn("agent cache write error", "error", err, "url", truncate(url, 50))
@@ -146,10 +161,12 @@ func (c *Cache) SetAgentOutput(url, parserType string, agentPipeline []string, o
 
 // Clear removes all cache entries
 func (c *Cache) Clear() error {
-	if _, err := c.db.Exec("DELETE FROM parser_cache"); err != nil {
+	ctx := context.Background()
+
+	if err := c.queries.DeleteParserCache(ctx); err != nil {
 		return fmt.Errorf("failed to clear parser cache: %w", err)
 	}
-	if _, err := c.db.Exec("DELETE FROM agent_cache"); err != nil {
+	if err := c.queries.DeleteAgentCache(ctx); err != nil {
 		return fmt.Errorf("failed to clear agent cache: %w", err)
 	}
 	return nil
@@ -157,31 +174,38 @@ func (c *Cache) Clear() error {
 
 // Stats returns cache statistics
 func (c *Cache) Stats() (CacheStats, error) {
+	ctx := context.Background()
 	var stats CacheStats
 
-	err := c.db.QueryRow("SELECT COUNT(*) FROM parser_cache").Scan(&stats.ParserEntries)
+	parserCount, err := c.queries.CountParserEntries(ctx)
 	if err != nil {
 		return stats, err
 	}
+	stats.ParserEntries = int(parserCount)
 
-	err = c.db.QueryRow("SELECT COUNT(*) FROM agent_cache").Scan(&stats.AgentEntries)
+	agentCount, err := c.queries.CountAgentEntries(ctx)
 	if err != nil {
 		return stats, err
 	}
+	stats.AgentEntries = int(agentCount)
 
-	var oldestUnix sql.NullInt64
-	err = c.db.QueryRow(`
-		SELECT MIN(created_at) FROM (
-			SELECT created_at FROM parser_cache
-			UNION ALL
-			SELECT created_at FROM agent_cache
-		)
-	`).Scan(&oldestUnix)
+	oldest, err := c.queries.GetOldestCacheEntry(ctx)
 	if err != nil && err != sql.ErrNoRows {
 		return stats, err
 	}
-	if oldestUnix.Valid && oldestUnix.Int64 > 0 {
-		stats.OldestEntry = time.Unix(oldestUnix.Int64, 0)
+
+	// Handle the interface{} type from sqlc
+	if oldest != nil {
+		switch v := oldest.(type) {
+		case int64:
+			if v > 0 {
+				stats.OldestEntry = time.Unix(v, 0)
+			}
+		case float64:
+			if v > 0 {
+				stats.OldestEntry = time.Unix(int64(v), 0)
+			}
+		}
 	}
 
 	return stats, nil
