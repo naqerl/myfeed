@@ -1,0 +1,31 @@
+# Example configuration file for myfeed
+# Copy this to ~/.config/myfeed/config.toml and customize
+
+database_path = "/home/user/.local/share/myfeed/data.db"
+
+# RSS feed without agents (no post-processing)
+[[resources]]
+feed_url = "https://example.com/feed.xml"
+parser = "web"
+type = "rss"
+
+# RSS feed with summary agent enabled
+[[resources]]
+feed_url = "https://another-blog.com/feed"
+parser = "web"
+type = "rss"
+agents = ["summary"]  # Content will be summarized by Gemini
+
+# Telegram channel with summary
+[[resources]]
+feed_url = "https://t.me/s/example_channel"
+parser = "telegram"
+type = "telegram_channel"
+agents = ["summary"]
+
+# YouTube channel (assumes parser exists)
+# [[resources]]
+# feed_url = "https://www.youtube.com/feeds/videos.xml?channel_id=UC..."
+# parser = "youtube"
+# type = "rss"
+# agents = ["summary"]  # Summarize video transcripts
