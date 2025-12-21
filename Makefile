@@ -27,3 +27,6 @@ test-coverage:
 
 run:
 	go run main.go
+
+run-clean:
+	go run main.go -clean

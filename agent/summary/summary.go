@@ -41,7 +41,7 @@ func New(ctx context.Context, creds config.GeminiCredentials) (*SummaryAgent, er
 		}),
 		genkit.WithPromptFS(prompts),
 		genkit.WithPromptDir("."),
-		genkit.WithDefaultModel(fmt.Sprintf("googleai/%s", creds.Model)),
+		genkit.WithDefaultModel(creds.Model),
 	)
 
 	// Fail fast if prompt wasn't found
