@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/scipunch/myfeed/fetcher/types"
 	"github.com/scipunch/myfeed/parser"
 )
 
@@ -104,10 +105,10 @@ func (p Parser) ensureVirtualEnv() error {
 	return nil
 }
 
-func (p Parser) Parse(uri string) (parser.Response, error) {
+func (p Parser) Parse(item types.FeedItem) (parser.Response, error) {
 	var resp Response
 
-	slog.Info("youtube parser: starting transcription", "url", uri)
+	slog.Info("youtube parser: starting transcription", "url", item.Link)
 
 	// Create temporary script file
 	scriptPath := filepath.Join(p.venvPath, "transcribe.py")
@@ -119,7 +120,7 @@ func (p Parser) Parse(uri string) (parser.Response, error) {
 	slog.Info("youtube parser: executing transcription script")
 
 	// Execute transcription script
-	cmd := exec.Command(p.pythonPath, scriptPath, uri)
+	cmd := exec.Command(p.pythonPath, scriptPath, item.Link)
 	output, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

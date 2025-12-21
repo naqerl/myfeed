@@ -6,6 +6,7 @@ import (
 	"github.com/mackee/go-readability"
 	"github.com/playwright-community/playwright-go"
 
+	"github.com/scipunch/myfeed/fetcher/types"
 	"github.com/scipunch/myfeed/parser"
 )
 
@@ -48,30 +49,30 @@ func (r Response) String() string {
 	return r.HTML
 }
 
-func (p Parser) Parse(uri string) (parser.Response, error) {
+func (p Parser) Parse(item types.FeedItem) (parser.Response, error) {
 	var resp Response
 	page, err := p.browser.NewPage()
 	if err != nil {
 		return resp, fmt.Errorf("could not create page: %w", err)
 	}
 	defer page.Close()
-	if _, err = page.Goto(uri); err != nil {
-		return resp, fmt.Errorf("could not go to '%s': %w", uri, err)
+	if _, err = page.Goto(item.Link); err != nil {
+		return resp, fmt.Errorf("could not go to '%s': %w", item.Link, err)
 	}
 	rawHtml, err := page.Content()
 	if err != nil {
-		return resp, fmt.Errorf("could not read page content at '%s': %w", uri, err)
+		return resp, fmt.Errorf("could not read page content at '%s': %w", item.Link, err)
 	}
 	resp.HTML = rawHtml
 
 	options := readability.DefaultOptions()
 	article, err := readability.Extract(string(rawHtml), options)
 	if err != nil {
-		return resp, fmt.Errorf("could not use readability for '%s': %w", uri, err)
+		return resp, fmt.Errorf("could not use readability for '%s': %w", item.Link, err)
 	}
 
 	if article.Root == nil {
-		return resp, fmt.Errorf("readability returned empty article for '%s'", uri)
+		return resp, fmt.Errorf("readability returned empty article for '%s'", item.Link)
 	}
 
 	resp.HTML = readability.ToHTML(article.Root)

@@ -3,6 +3,8 @@ package telegram
 import (
 	"strings"
 	"testing"
+
+	"github.com/scipunch/myfeed/fetcher/types"
 )
 
 func TestConvertTelegramToHTML(t *testing.T) {
@@ -95,7 +97,12 @@ func TestParse(t *testing.T) {
 	}
 
 	message := "Test message with **bold**"
-	response, err := parser.Parse(message)
+	item := types.FeedItem{
+		Title:       "Test",
+		Link:        "https://t.me/test/123",
+		Description: message,
+	}
+	response, err := parser.Parse(item)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}

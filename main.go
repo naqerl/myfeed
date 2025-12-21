@@ -18,6 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/scipunch/myfeed/agent"
+	"github.com/scipunch/myfeed/cache"
 	"github.com/scipunch/myfeed/config"
 	"github.com/scipunch/myfeed/fetcher"
 	"github.com/scipunch/myfeed/parser"
@@ -46,7 +47,9 @@ func main() {
 	}
 
 	var cfgPath string
+	var cleanCache bool
 	flag.StringVar(&cfgPath, "config", config.DefaultPath(), "path to a TOML config")
+	flag.BoolVar(&cleanCache, "clean", false, "remove all cache entries")
 	flag.Parse()
 
 	// Read config and create if default is missing
@@ -84,6 +87,32 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Initialize cache
+	cacheDB, err := cache.NewCache(cache.DefaultCachePath())
+	if err != nil {
+		log.Fatalf("failed to initialize cache: %v", err)
+	}
+	defer cacheDB.Close()
+
+	// Handle -clean flag
+	if cleanCache {
+		if err := cacheDB.Clear(); err != nil {
+			log.Fatalf("failed to clear cache: %v", err)
+		}
+		slog.Info("cache cleared successfully")
+		return
+	}
+
+	// Show cache stats
+	stats, err := cacheDB.Stats()
+	if err != nil {
+		slog.Warn("failed to get cache stats", "error", err)
+	} else {
+		slog.Info("cache initialized",
+			"parser_entries", stats.ParserEntries,
+			"agent_entries", stats.AgentEntries)
+	}
 
 	// Initialize agents if any resource requires them
 	agentTypes := agent.CollectUniqueAgentTypes(conf.Resources)
@@ -146,42 +175,80 @@ func main() {
 		resource := conf.Resources[i]
 		p := parsers[resource.ParserT]
 		for _, item := range feed.Items {
-			// For Telegram messages, pass the description (message content) instead of the link
-			// For other parsers (web, youtube), pass the link to fetch and parse
-			var parseInput string
-			if resource.ParserT == parser.Telegram {
-				parseInput = item.Description
-			} else {
-				parseInput = item.Link
+			var content string
+			var parsedData parser.Response
+			cacheHit := false
+
+			// Step 1: Check agent cache first (if agents configured)
+			if len(resource.Agents) > 0 {
+				if cached, hit, err := cacheDB.GetAgentOutput(item.Link, string(resource.ParserT), resource.Agents); err == nil && hit {
+					content = cached
+					cacheHit = true
+					slog.Debug("agent cache hit", "url", item.Link, "agents", resource.Agents)
+				}
 			}
 
-			data, err := p.Parse(parseInput)
-			if err != nil {
-				errs = append(errs, err)
-				continue
-			}
-			slog.Info("feed item parsed", "length", len(data.String()))
-
-			content := data.String()
-
-			// Apply agents if configured for this resource
-			for _, agentName := range resource.Agents {
-				agentInstance, ok := agents[agentName]
-				if !ok {
-					errs = append(errs, fmt.Errorf("agent '%s' not found", agentName))
-					continue
+			// Step 2: If no agent cache, try parser cache
+			if !cacheHit {
+				if cached, hit, err := cacheDB.GetParserOutput(item.Link, string(resource.ParserT)); err == nil && hit {
+					// Deserialize cached parser output
+					if data, err := cache.DeserializeParserResponse(string(resource.ParserT), cached); err == nil {
+						parsedData = data
+						slog.Debug("parser cache hit", "url", item.Link, "parser", resource.ParserT)
+					} else {
+						slog.Warn("failed to deserialize cached parser output", "error", err)
+						// Fall through to re-parse
+					}
 				}
 
-				processed, err := agentInstance.Process(ctx, content)
-				if err != nil {
-					errs = append(errs, fmt.Errorf("agent '%s' processing failed: %w", agentName, err))
-					slog.Error("agent processing failed, using original content", "agent", agentName, "error", err)
-					// Continue with original content on error
-					break
+				// Step 3: If no parser cache, parse now
+				if parsedData == nil {
+					data, err := p.Parse(item)
+					if err != nil {
+						errs = append(errs, err)
+						continue
+					}
+					parsedData = data
+					slog.Info("feed item parsed", "url", item.Link, "length", len(data.String()))
+
+					// Cache parser output
+					if serialized, err := cache.SerializeParserResponse(string(resource.ParserT), parsedData); err == nil {
+						if err := cacheDB.SetParserOutput(item.Link, string(resource.ParserT), serialized); err != nil {
+							slog.Warn("failed to cache parser output", "error", err)
+						}
+					} else {
+						slog.Warn("failed to serialize parser output", "error", err)
+					}
 				}
 
-				content = processed
-				slog.Info("content processed by agent", "agent", agentName, "original_length", len(data.String()), "processed_length", len(content))
+				content = parsedData.String()
+
+				// Step 4: Apply agents if configured
+				if len(resource.Agents) > 0 {
+					for _, agentName := range resource.Agents {
+						agentInstance, ok := agents[agentName]
+						if !ok {
+							errs = append(errs, fmt.Errorf("agent '%s' not found", agentName))
+							continue
+						}
+
+						processed, err := agentInstance.Process(ctx, content)
+						if err != nil {
+							errs = append(errs, fmt.Errorf("agent '%s' processing failed: %w", agentName, err))
+							slog.Error("agent processing failed, using original content", "agent", agentName, "error", err)
+							// Continue with original content on error
+							break
+						}
+
+						content = processed
+						slog.Info("content processed by agent", "agent", agentName, "original_length", len(parsedData.String()), "processed_length", len(content))
+					}
+
+					// Cache final agent output
+					if err := cacheDB.SetAgentOutput(item.Link, string(resource.ParserT), resource.Agents, content); err != nil {
+						slog.Warn("failed to cache agent output", "error", err)
+					}
+				}
 			}
 
 			newsletter.Pages = append(newsletter.Pages, Page{

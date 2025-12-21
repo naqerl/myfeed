@@ -1,6 +1,10 @@
 package parser
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/scipunch/myfeed/fetcher/types"
+)
 
 type Type = string
 
@@ -12,7 +16,7 @@ var (
 )
 
 type Parser interface {
-	Parse(uri string) (Response, error)
+	Parse(item types.FeedItem) (Response, error)
 }
 
 type Response interface {

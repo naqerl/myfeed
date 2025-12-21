@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/scipunch/myfeed/fetcher/types"
 )
 
 type TestCase struct {
@@ -65,7 +67,12 @@ func TestYouTubeParser(t *testing.T) {
 
 			t.Logf("Testing: %s (%s)", tc.Description, tc.VideoURL)
 
-			response, err := parser.Parse(tc.VideoURL)
+			item := types.FeedItem{
+				Title:       tc.Name,
+				Link:        tc.VideoURL,
+				Description: tc.Description,
+			}
+			response, err := parser.Parse(item)
 			if err != nil {
 				// Check if we should skip this test
 				if strings.Contains(err.Error(), "ERROR: [youtube]") ||

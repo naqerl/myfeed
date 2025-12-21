@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/scipunch/myfeed/fetcher/types"
 	"github.com/scipunch/myfeed/parser"
 )
 
@@ -26,12 +27,12 @@ func (r Response) String() string {
 	return r.HTML
 }
 
-// Parse takes a Telegram message content (passed as text, not a URL to fetch)
-// and converts it to HTML with Telegram formatting
-func (p Parser) Parse(content string) (parser.Response, error) {
-	// For Telegram messages, the content is passed directly as the "uri" parameter
-	// This is different from web/youtube parsers that fetch from URLs
-	html := convertTelegramToHTML(content)
+// Parse takes a FeedItem and converts the Description (Telegram message content) to HTML
+// Uses item.Link as the cache key, but processes item.Description as the content
+func (p Parser) Parse(item types.FeedItem) (parser.Response, error) {
+	// For Telegram messages, the content is in Description field
+	// Link field is used as the cache key
+	html := convertTelegramToHTML(item.Description)
 	return Response{HTML: html}, nil
 }
 
