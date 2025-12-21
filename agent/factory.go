@@ -11,20 +11,27 @@ import (
 // InitAgents creates agents based on the requested agent types.
 // It fails fast if any agent initialization fails (e.g., missing credentials, invalid prompts).
 // Returns a map of agent name -> agent instance.
+// All agents are automatically wrapped with retry logic (exponential backoff, 5-minute timeout).
 func InitAgents(ctx context.Context, agentTypes []string, creds config.GeminiCredentials) (map[string]Agent, error) {
 	agents := make(map[string]Agent)
+	retryConfig := DefaultRetryConfig()
 
 	for _, agentType := range agentTypes {
+		var baseAgent Agent
+		var err error
+
 		switch agentType {
 		case "summary":
-			agent, err := summary.New(ctx, creds)
+			baseAgent, err = summary.New(ctx, creds)
 			if err != nil {
 				return nil, fmt.Errorf("failed to initialize summary agent: %w", err)
 			}
-			agents[agentType] = agent
 		default:
 			return nil, fmt.Errorf("unknown agent type: %s", agentType)
 		}
+
+		// Wrap with retry logic
+		agents[agentType] = WithRetry(baseAgent, retryConfig)
 	}
 
 	return agents, nil
