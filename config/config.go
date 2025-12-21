@@ -29,6 +29,7 @@ type ResourceConfig struct {
 	FeedURL string       `toml:"feed_url"`
 	ParserT parser.Type  `toml:"parser"`
 	T       ResourceType `toml:"type"`
+	Agents  []string     `toml:"agents"` // Post-processing agents, e.g., ["summary"]
 }
 
 func Read(path string) (Config, error) {
