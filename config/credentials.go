@@ -15,6 +15,7 @@ const baseCredPath = "myfeed/creds.toml"
 // Credentials holds all application credentials
 type Credentials struct {
 	Telegram TelegramCredentials `toml:"telegram"`
+	Gemini   GeminiCredentials   `toml:"gemini"`
 }
 
 // TelegramCredentials holds Telegram API credentials
@@ -27,6 +28,17 @@ type TelegramCredentials struct {
 // IsValid checks if telegram credentials are fully populated
 func (tc TelegramCredentials) IsValid() bool {
 	return tc.AppID != 0 && tc.AppHash != "" && tc.PhoneNumber != ""
+}
+
+// GeminiCredentials holds Google Gemini API credentials
+type GeminiCredentials struct {
+	APIKey string `toml:"api_key"`
+	Model  string `toml:"model"` // e.g., "gemini-2.0-flash-exp"
+}
+
+// IsValid checks if Gemini credentials are fully populated
+func (gc GeminiCredentials) IsValid() bool {
+	return gc.APIKey != "" && gc.Model != ""
 }
 
 // ReadCredentials reads credentials from the specified path
