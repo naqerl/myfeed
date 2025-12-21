@@ -151,6 +151,14 @@ func main() {
 	var errs []error
 	feeds := make([]*fetcher.Feed, len(conf.Resources))
 	for i, resource := range conf.Resources {
+		// Check for cancellation before fetching
+		select {
+		case <-ctx.Done():
+			slog.Info("interrupted by user during fetch, exiting gracefully")
+			return
+		default:
+		}
+
 		f := fetchers[resource.T]
 		feed, err := f.Fetch(ctx, resource.FeedURL)
 		if err != nil {
@@ -168,6 +176,14 @@ func main() {
 	errs = nil
 	newsletter := Newsletter{Title: "Test newsletter"}
 	for i, feed := range feeds {
+		// Check if context was cancelled
+		select {
+		case <-ctx.Done():
+			slog.Info("interrupted by user, exiting gracefully")
+			return
+		default:
+		}
+
 		if feed == nil {
 			slog.Debug("skipping failed to parse feed")
 			continue
@@ -175,6 +191,14 @@ func main() {
 		resource := conf.Resources[i]
 		p := parsers[resource.ParserT]
 		for _, item := range feed.Items {
+			// Check for cancellation before processing each item
+			select {
+			case <-ctx.Done():
+				slog.Info("interrupted by user, exiting gracefully")
+				return
+			default:
+			}
+
 			var content string
 			var parsedData parser.Response
 			cacheHit := false
