@@ -71,7 +71,9 @@ func main() {
 
 	var parserTypes []parser.Type
 	for _, r := range conf.Resources {
-		parserTypes = append(parserTypes, r.ParserT)
+		if r.IsEnabled() {
+			parserTypes = append(parserTypes, r.ParserT)
+		}
 	}
 	parsers, err := factory.Init(parserTypes)
 	if err != nil {
@@ -88,12 +90,18 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Initialize cache
-	cacheDB, err := cache.NewCache(cache.DefaultCachePath())
+	// Initialize database (includes both main and cache schemas)
+	db, err := initDB(ctx, conf.DatabasePath)
+	if err != nil {
+		log.Fatalf("failed to initialize database schema with %v", err)
+	}
+	defer db.Close()
+
+	// Initialize cache using the shared database connection
+	cacheDB, err := cache.NewCacheFromDB(db)
 	if err != nil {
 		log.Fatalf("failed to initialize cache: %v", err)
 	}
-	defer cacheDB.Close()
 
 	// Handle -clean flag
 	if cleanCache {
@@ -131,15 +139,12 @@ func main() {
 		slog.Info("initialized agents", "types", agentTypes)
 	}
 
-	_, err = initDB(ctx, conf.DatabasePath)
-	if err != nil {
-		log.Fatalf("failed to initialize database schema with %v", err)
-	}
-
 	// Initialize fetchers
 	var resourceTypes []config.ResourceType
 	for _, r := range conf.Resources {
-		resourceTypes = append(resourceTypes, r.T)
+		if r.IsEnabled() {
+			resourceTypes = append(resourceTypes, r.T)
+		}
 	}
 	configDir := path.Dir(cfgPath)
 	fetchers, err := fetcher.GetFetchers(resourceTypes, configDir)
@@ -151,6 +156,12 @@ func main() {
 	var errs []error
 	feeds := make([]*fetcher.Feed, len(conf.Resources))
 	for i, resource := range conf.Resources {
+		// Skip disabled resources
+		if !resource.IsEnabled() {
+			slog.Debug("skipping disabled resource", "url", resource.FeedURL)
+			continue
+		}
+
 		// Check for cancellation before fetching
 		select {
 		case <-ctx.Done():
@@ -303,8 +314,11 @@ func initDB(ctx context.Context, source string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database at '%s' with %w", source, err)
 	}
+
+	// Initialize schema (includes main feed table and cache tables)
 	if _, err := db.ExecContext(ctx, ddl); err != nil {
 		return nil, fmt.Errorf("failed to execute DDL with %w", err)
 	}
+
 	return db, nil
 }

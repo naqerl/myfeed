@@ -37,10 +37,13 @@ func InitAgents(ctx context.Context, agentTypes []string, creds config.GeminiCre
 	return agents, nil
 }
 
-// CollectUniqueAgentTypes extracts unique agent types from resource configurations
+// CollectUniqueAgentTypes extracts unique agent types from enabled resource configurations
 func CollectUniqueAgentTypes(resources []config.ResourceConfig) []string {
 	typeSet := make(map[string]bool)
 	for _, resource := range resources {
+		if !resource.IsEnabled() {
+			continue
+		}
 		for _, agentType := range resource.Agents {
 			typeSet[agentType] = true
 		}

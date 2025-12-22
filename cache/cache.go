@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,13 +13,11 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-//go:embed schema.sql
-var schemaSQL string
-
 // Cache provides caching for parser and agent outputs using sqlc-generated queries
 type Cache struct {
 	db      *sql.DB
 	queries *Queries
+	ownsDB  bool // Whether this cache owns the DB connection and should close it
 }
 
 // CacheStats contains cache statistics
@@ -31,6 +28,7 @@ type CacheStats struct {
 }
 
 // NewCache initializes cache database at the given path
+// Deprecated: Use NewCacheFromDB with a pre-initialized database connection instead
 func NewCache(dbPath string) (*Cache, error) {
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
@@ -42,15 +40,24 @@ func NewCache(dbPath string) (*Cache, error) {
 		return nil, fmt.Errorf("failed to open cache database: %w", err)
 	}
 
-	// Execute schema
-	if _, err := db.Exec(schemaSQL); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to initialize cache schema: %w", err)
-	}
+	// Note: Schema initialization must be done externally
+	// This function is kept for backward compatibility and testing
 
 	return &Cache{
 		db:      db,
 		queries: New(db),
+		ownsDB:  true,
+	}, nil
+}
+
+// NewCacheFromDB creates a cache using an existing database connection
+// The database schema should already be initialized before calling this function
+// The cache will NOT close the database connection when Close() is called
+func NewCacheFromDB(db *sql.DB) (*Cache, error) {
+	return &Cache{
+		db:      db,
+		queries: New(db),
+		ownsDB:  false,
 	}, nil
 }
 
@@ -211,9 +218,9 @@ func (c *Cache) Stats() (CacheStats, error) {
 	return stats, nil
 }
 
-// Close closes the cache database
+// Close closes the cache database if it owns the connection
 func (c *Cache) Close() error {
-	if c.db != nil {
+	if c.ownsDB && c.db != nil {
 		return c.db.Close()
 	}
 	return nil
