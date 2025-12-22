@@ -145,6 +145,11 @@ func (f *TelegramFetcher) Fetch(ctx context.Context, url string) (types.Feed, er
 			feed.Items = append(feed.Items, item)
 		}
 
+		// Reverse the items to get oldest first (Telegram API returns newest first)
+		for i, j := 0, len(feed.Items)-1; i < j; i, j = i+1, j-1 {
+			feed.Items[i], feed.Items[j] = feed.Items[j], feed.Items[i]
+		}
+
 		slog.Info("fetched Telegram channel", "channel", username, "messages", len(feed.Items))
 		return nil
 	})
