@@ -58,6 +58,74 @@ agents = ["summary", "translate", "format"]  # Future: multiple agents in sequen
 - An unknown agent type is specified
 - Embedded prompt files are missing
 
+## Filters
+
+Filters allow you to exclude unwanted content from your feed based on various criteria. They are defined in your config file and can be applied per resource.
+
+### Available Filter Options
+
+- **min_length**: Minimum character count (title + description combined)
+- **min_words**: Minimum word count
+- **exclude_patterns**: List of regex patterns to exclude matching items
+- **require_paragraphs**: Require content to have multiple paragraphs/lines
+
+### Filter Examples
+
+```toml
+[filters.short_posts]
+min_length = 100        # Minimum character count (title + description)
+min_words = 20          # Minimum word count
+
+[filters.quality_content]
+min_length = 200
+min_words = 50
+require_paragraphs = true
+
+[filters.lwn_subscription]
+exclude_patterns = [
+    "Subscription required",
+    "currently available to LWN subscribers only",
+    "Please consider subscribing to LWN",
+]
+
+[filters.russian_announcements]
+exclude_patterns = [
+    "^[Дд]ержите.*",     # Starts with "Держите" (case insensitive)
+    "^[Сс]мотрите.*",    # Starts with "Смотрите"
+    "^[Вв]прочем.*",     # Starts with "Впрочем"
+]
+```
+
+### Applying Filters to Resources
+
+```toml
+[[resources]]
+feed_url = "https://lwn.net/headlines/rss"
+parser = "web"
+type = "rss"
+filters = ["lwn_subscription"]  # Apply single filter
+
+[[resources]]
+feed_url = "https://t.me/techsparks"
+parser = "telegram"
+type = "telegram_channel"
+filters = ["quality_content", "russian_announcements"]  # Apply multiple filters (pipeline)
+```
+
+### Filter Pipeline
+
+When multiple filters are specified, they are applied as a pipeline in order. An item must pass all filters to be included:
+
+```toml
+[[resources]]
+feed_url = "https://example.com/feed"
+parser = "web"
+type = "rss"
+filters = ["short_posts", "quality_content"]  # Item must pass both filters
+```
+
+If an item fails any filter in the pipeline, it will be excluded from the final output.
+
 ## Caching
 
 To speed up development and testing, myfeed caches parser and agent outputs in `~/.cache/myfeed/cache.db`.
