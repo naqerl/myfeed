@@ -6,10 +6,63 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{{.Title}}</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            @page {
+                size: B5;
+                margin: 15mm;
+            }
+            
+            @media print {
+                body {
+                    margin: 0;
+                    padding: 0;
+                    background: white;
+                }
+                
+                .page {
+                    width: 176mm;
+                    min-height: 250mm;
+                    page-break-after: always;
+                    box-sizing: border-box;
+                }
+                
+                .page:last-child {
+                    page-break-after: auto;
+                }
+                
+                h1 {
+                    page-break-after: avoid;
+                }
+                
+                img {
+                    max-width: 100%;
+                    page-break-inside: avoid;
+                }
+                
+                pre, code {
+                    page-break-inside: avoid;
+                }
+            }
+            
+            @media screen {
+                body {
+                    background: #f3f4f6;
+                }
+                
+                .page {
+                    width: 176mm;
+                    min-height: 250mm;
+                    margin: 20px auto;
+                    padding: 15mm;
+                    background: white;
+                    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+                }
+            }
+        </style>
     </head>
-    <body class="bg-gray-100">
+    <body>
         {{range .Pages}}
-            <div class="bg-white mx-auto my-8 p-[20mm] shadow-lg print:shadow-none print:my-0 print:mx-0">
+            <div class="page">
                 <h1 class="text-4xl font-bold mb-6">{{.Title}}</h1>
                 <div class="prose max-w-none">{{.Content}}</div>
             </div>
