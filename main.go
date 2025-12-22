@@ -325,7 +325,7 @@ func main() {
 			res, exists := resourceMap[i]
 			if !exists {
 				res = &Resource{
-					Name:  conf.Resources[i].FeedURL,
+					Name:  feed.Title,
 					Pages: []Page{},
 				}
 				resourceMap[i] = res
