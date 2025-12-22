@@ -21,6 +21,7 @@ import (
 	"github.com/scipunch/myfeed/cache"
 	"github.com/scipunch/myfeed/config"
 	"github.com/scipunch/myfeed/fetcher"
+	"github.com/scipunch/myfeed/filter"
 	"github.com/scipunch/myfeed/parser"
 	"github.com/scipunch/myfeed/parser/factory"
 )
@@ -68,6 +69,15 @@ func main() {
 	creds, err := config.ReadCredentials(credPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Fatalf("failed to read credentials: %s", err)
+	}
+
+	// Initialize filter pipeline
+	filterPipeline, err := filter.NewFilterPipeline(conf.Filters)
+	if err != nil {
+		log.Fatalf("failed to initialize filters: %s", err)
+	}
+	if len(conf.Filters) > 0 {
+		slog.Info("initialized filters", "count", len(conf.Filters))
 	}
 
 	var parserTypes []parser.Type
@@ -209,6 +219,15 @@ func main() {
 				slog.Info("interrupted by user, exiting gracefully")
 				return
 			default:
+			}
+
+			// Apply filters
+			if len(resource.FilterNames) > 0 {
+				shouldInclude, reason := filterPipeline.ShouldInclude(item, resource.FilterNames)
+				if !shouldInclude {
+					slog.Debug("item filtered out", "title", item.Title, "reason", reason, "url", item.Link)
+					continue
+				}
 			}
 
 			var content string

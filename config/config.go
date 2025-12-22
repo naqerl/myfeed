@@ -21,16 +21,26 @@ var (
 const baseCfgPath = "myfeed/config.toml"
 
 type Config struct {
-	Resources    []ResourceConfig `toml:"resources"`
-	DatabasePath string           `toml:"database_path"`
+	Resources    []ResourceConfig  `toml:"resources"`
+	DatabasePath string            `toml:"database_path"`
+	Filters      map[string]Filter `toml:"filters"` // Named filters that can be referenced by resources
 }
 
 type ResourceConfig struct {
-	FeedURL string       `toml:"feed_url"`
-	ParserT parser.Type  `toml:"parser"`
-	T       ResourceType `toml:"type"`
-	Agents  []string     `toml:"agents"`  // Post-processing agents, e.g., ["summary"]
-	Enabled *bool        `toml:"enabled"` // Whether this resource is active (defaults to true if not set)
+	FeedURL     string       `toml:"feed_url"`
+	ParserT     parser.Type  `toml:"parser"`
+	T           ResourceType `toml:"type"`
+	Agents      []string     `toml:"agents"`  // Post-processing agents, e.g., ["summary"]
+	Enabled     *bool        `toml:"enabled"` // Whether this resource is active (defaults to true if not set)
+	FilterNames []string     `toml:"filters"` // Names of filters to apply (pipeline)
+}
+
+// Filter defines rules for filtering feed items
+type Filter struct {
+	MinLength         int      `toml:"min_length"`         // Minimum character count (0 = no limit)
+	MinWords          int      `toml:"min_words"`          // Minimum word count (0 = no limit)
+	ExcludePatterns   []string `toml:"exclude_patterns"`   // Regex patterns to exclude
+	RequireParagraphs bool     `toml:"require_paragraphs"` // Must have multiple lines/paragraphs
 }
 
 // IsEnabled returns true if the resource is enabled (defaults to true if not explicitly set)
