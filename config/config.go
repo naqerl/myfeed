@@ -29,7 +29,16 @@ type ResourceConfig struct {
 	FeedURL string       `toml:"feed_url"`
 	ParserT parser.Type  `toml:"parser"`
 	T       ResourceType `toml:"type"`
-	Agents  []string     `toml:"agents"` // Post-processing agents, e.g., ["summary"]
+	Agents  []string     `toml:"agents"`  // Post-processing agents, e.g., ["summary"]
+	Enabled *bool        `toml:"enabled"` // Whether this resource is active (defaults to true if not set)
+}
+
+// IsEnabled returns true if the resource is enabled (defaults to true if not explicitly set)
+func (r ResourceConfig) IsEnabled() bool {
+	if r.Enabled == nil {
+		return true
+	}
+	return *r.Enabled
 }
 
 func Read(path string) (Config, error) {

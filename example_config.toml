@@ -8,6 +8,7 @@ database_path = "/home/user/.local/share/myfeed/data.db"
 feed_url = "https://example.com/feed.xml"
 parser = "web"
 type = "rss"
+# enabled = true  # Optional: defaults to true if not specified
 
 # RSS feed with summary agent enabled
 [[resources]]
@@ -16,12 +17,13 @@ parser = "web"
 type = "rss"
 agents = ["summary"]  # Content will be summarized by Gemini
 
-# Telegram channel with summary
+# Telegram channel with summary (temporarily disabled)
 [[resources]]
 feed_url = "https://t.me/s/example_channel"
 parser = "telegram"
 type = "telegram_channel"
 agents = ["summary"]
+enabled = false  # Set to false to temporarily disable this resource
 
 # YouTube channel (assumes parser exists)
 # [[resources]]
@@ -29,3 +31,4 @@ agents = ["summary"]
 # parser = "youtube"
 # type = "rss"
 # agents = ["summary"]  # Summarize video transcripts
+# enabled = false  # Disabled by default
