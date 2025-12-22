@@ -108,6 +108,63 @@
             }
             
             /* Common styles for both print and screen */
+            /* Table of Contents */
+            .toc {
+                margin-bottom: 3em;
+                padding-bottom: 2em;
+                border-bottom: 2px solid #333;
+            }
+            
+            .toc-title {
+                font-size: 2em;
+                font-weight: bold;
+                margin-bottom: 1em;
+                color: #1f2937;
+            }
+            
+            .toc-resource {
+                margin-bottom: 1.5em;
+            }
+            
+            .toc-resource-name {
+                font-size: 1.2em;
+                font-weight: bold;
+                margin-bottom: 0.5em;
+                color: #374151;
+            }
+            
+            .toc-items {
+                list-style: none;
+                padding-left: 1em;
+                margin: 0;
+            }
+            
+            .toc-items li {
+                margin-bottom: 0.25em;
+            }
+            
+            .toc-items a {
+                color: #1f2937;
+                text-decoration: none;
+            }
+            
+            @media screen {
+                .toc-items a:hover {
+                    color: #3b82f6;
+                    text-decoration: underline;
+                }
+            }
+            
+            @media print {
+                .toc {
+                    page-break-after: always;
+                }
+                
+                .toc-items a {
+                    text-decoration: none;
+                }
+            }
+            
             .article-content {
                 font-size: 1em;
             }
@@ -145,16 +202,34 @@
     </head>
     <body>
         <div class="container">
-            {{range .Pages}}
-                <article class="article">
-                    <h1 class="article-title">{{.Title}}</h1>
-                    {{if .Link}}
-                        <div class="article-source">
-                            Source: <a href="{{.Link}}">{{.Link}}</a>
-                        </div>
-                    {{end}}
-                    <div class="article-content">{{.Content}}</div>
-                </article>
+            <!-- Table of Contents -->
+            <nav class="toc">
+                <h1 class="toc-title">Table of Contents</h1>
+                {{range .Resources}}
+                    <div class="toc-resource">
+                        <h2 class="toc-resource-name">{{.Name}}</h2>
+                        <ul class="toc-items">
+                            {{range .Pages}}
+                                <li><a href="#{{.ID}}">{{.Title}}</a></li>
+                            {{end}}
+                        </ul>
+                    </div>
+                {{end}}
+            </nav>
+
+            <!-- Articles -->
+            {{range .Resources}}
+                {{range .Pages}}
+                    <article class="article" id="{{.ID}}">
+                        <h1 class="article-title">{{.Title}}</h1>
+                        {{if .Link}}
+                            <div class="article-source">
+                                Source: <a href="{{.Link}}">{{.Link}}</a>
+                            </div>
+                        {{end}}
+                        <div class="article-content">{{.Content}}</div>
+                    </article>
+                {{end}}
             {{end}}
         </div>
     </body>

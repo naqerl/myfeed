@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	_ "embed"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,7 +32,12 @@ import (
 var ddl string
 
 type Newsletter struct {
-	Title string
+	Title     string
+	Resources []Resource
+}
+
+type Resource struct {
+	Name  string
 	Pages []Page
 }
 
@@ -38,6 +45,7 @@ type Page struct {
 	Title   string
 	Link    string
 	Content string
+	ID      string // Unique ID for anchor links
 }
 
 func main() {
@@ -197,6 +205,7 @@ func main() {
 	// Process new items
 	errs = nil
 	newsletter := Newsletter{Title: "Test newsletter"}
+	resourceMap := make(map[int]*Resource) // Map index to resource
 	for i, feed := range feeds {
 		// Check if context was cancelled
 		select {
@@ -306,14 +315,40 @@ func main() {
 				}
 			}
 
-			newsletter.Pages = append(newsletter.Pages, Page{
+			// Generate unique ID for anchor link
+			hash := sha256.Sum256([]byte(item.Link))
+			pageID := hex.EncodeToString(hash[:8])
+
+			// Get or create resource for this feed
+			res, exists := resourceMap[i]
+			if !exists {
+				res = &Resource{
+					Name:  conf.Resources[i].FeedURL,
+					Pages: []Page{},
+				}
+				resourceMap[i] = res
+			}
+
+			res.Pages = append(res.Pages, Page{
 				Title:   item.Title,
 				Link:    item.Link,
 				Content: content,
+				ID:      pageID,
 			})
 		}
 	}
-	slog.Info("newsletter content fetched", "pages", len(newsletter.Pages))
+	// Convert resource map to slice in order
+	for i := 0; i < len(feeds); i++ {
+		if res, exists := resourceMap[i]; exists && len(res.Pages) > 0 {
+			newsletter.Resources = append(newsletter.Resources, *res)
+		}
+	}
+
+	totalPages := 0
+	for _, res := range newsletter.Resources {
+		totalPages += len(res.Pages)
+	}
+	slog.Info("newsletter content fetched", "resources", len(newsletter.Resources), "pages", totalPages)
 	if len(errs) > 0 {
 		slog.Error("failed to parse some pages", "errors", errors.Join(errs...).Error())
 	}
