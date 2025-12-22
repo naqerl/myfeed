@@ -12,6 +12,12 @@
                 margin: 15mm;
             }
             
+            body {
+                font-family: Georgia, serif;
+                line-height: 1.6;
+                color: #333;
+            }
+            
             @media print {
                 body {
                     margin: 0;
@@ -19,19 +25,37 @@
                     background: white;
                 }
                 
-                .page {
-                    width: 176mm;
-                    min-height: 250mm;
-                    page-break-after: always;
-                    box-sizing: border-box;
+                .container {
+                    max-width: 100%;
                 }
                 
-                .page:last-child {
-                    page-break-after: auto;
+                /* Article styling */
+                .article {
+                    margin-bottom: 2em;
                 }
                 
-                h1 {
+                .article-title {
+                    font-size: 1.5em;
+                    font-weight: bold;
+                    margin-top: 1.5em;
+                    margin-bottom: 0.5em;
                     page-break-after: avoid;
+                }
+                
+                .article-title:first-child {
+                    margin-top: 0;
+                }
+                
+                /* Prevent orphans and widows */
+                p {
+                    orphans: 3;
+                    widows: 3;
+                }
+                
+                /* Avoid page breaks inside these elements */
+                h1, h2, h3, h4, h5, h6 {
+                    page-break-after: avoid;
+                    page-break-inside: avoid;
                 }
                 
                 img {
@@ -39,34 +63,100 @@
                     page-break-inside: avoid;
                 }
                 
-                pre, code {
+                pre, code, blockquote {
                     page-break-inside: avoid;
+                }
+                
+                /* Avoid page breaks right after headings */
+                h1 + *, h2 + *, h3 + * {
+                    page-break-before: avoid;
                 }
             }
             
             @media screen {
                 body {
                     background: #f3f4f6;
+                    padding: 20px;
                 }
                 
-                .page {
+                .container {
                     width: 176mm;
-                    min-height: 250mm;
-                    margin: 20px auto;
+                    max-width: 100%;
+                    margin: 0 auto;
                     padding: 15mm;
                     background: white;
                     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+                    min-height: 250mm;
+                }
+                
+                .article {
+                    margin-bottom: 3em;
+                    padding-bottom: 2em;
+                    border-bottom: 1px solid #e5e7eb;
+                }
+                
+                .article:last-child {
+                    border-bottom: none;
+                }
+                
+                .article-title {
+                    font-size: 1.5em;
+                    font-weight: bold;
+                    margin-bottom: 1em;
+                    color: #1f2937;
                 }
             }
+            
+            /* Common styles for both print and screen */
+            .article-content {
+                font-size: 1em;
+            }
+            
+            .article-source {
+                font-size: 0.85em;
+                color: #6b7280;
+                margin-top: 0.25em;
+                margin-bottom: 0.75em;
+            }
+            
+            .article-source a {
+                color: #6b7280;
+                text-decoration: none;
+                word-break: break-all;
+            }
+            
+            @media screen {
+                .article-source a:hover {
+                    color: #3b82f6;
+                    text-decoration: underline;
+                }
+            }
+            
+            .article-content h1 { font-size: 1.5em; margin-top: 1em; margin-bottom: 0.5em; }
+            .article-content h2 { font-size: 1.3em; margin-top: 1em; margin-bottom: 0.5em; }
+            .article-content h3 { font-size: 1.1em; margin-top: 1em; margin-bottom: 0.5em; }
+            .article-content p { margin-bottom: 1em; }
+            .article-content ul, .article-content ol { margin-bottom: 1em; padding-left: 2em; }
+            .article-content pre { background: #f5f5f5; padding: 1em; border-radius: 4px; overflow-x: auto; }
+            .article-content code { background: #f5f5f5; padding: 0.2em 0.4em; border-radius: 3px; font-size: 0.9em; }
+            .article-content blockquote { border-left: 4px solid #ddd; padding-left: 1em; margin-left: 0; font-style: italic; }
+            .article-content img { max-width: 100%; height: auto; display: block; margin: 1em 0; }
         </style>
     </head>
     <body>
-        {{range .Pages}}
-            <div class="page">
-                <h1 class="text-4xl font-bold mb-6">{{.Title}}</h1>
-                <div class="prose max-w-none">{{.Content}}</div>
-            </div>
-        {{end}}
+        <div class="container">
+            {{range .Pages}}
+                <article class="article">
+                    <h1 class="article-title">{{.Title}}</h1>
+                    {{if .Link}}
+                        <div class="article-source">
+                            Source: <a href="{{.Link}}">{{.Link}}</a>
+                        </div>
+                    {{end}}
+                    <div class="article-content">{{.Content}}</div>
+                </article>
+            {{end}}
+        </div>
     </body>
     </html>
 {{end}}

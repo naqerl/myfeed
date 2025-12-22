@@ -35,6 +35,7 @@ type Newsletter struct {
 
 type Page struct {
 	Title   string
+	Link    string
 	Content string
 }
 
@@ -288,6 +289,7 @@ func main() {
 
 			newsletter.Pages = append(newsletter.Pages, Page{
 				Title:   item.Title,
+				Link:    item.Link,
 				Content: content,
 			})
 		}
