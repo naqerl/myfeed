@@ -1,5 +1,6 @@
 tmp/
 *.html
+*.pdf
 session-*.md
 myfeed
 .cache/

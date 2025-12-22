@@ -14,11 +14,13 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"syscall"
 	"text/template"
 
 	_ "modernc.org/sqlite"
 
+	"github.com/playwright-community/playwright-go"
 	"github.com/scipunch/myfeed/agent"
 	"github.com/scipunch/myfeed/cache"
 	"github.com/scipunch/myfeed/config"
@@ -353,7 +355,7 @@ func main() {
 		slog.Error("failed to parse some pages", "errors", errors.Join(errs...).Error())
 	}
 
-	// TODO: Generate PDF report
+	// Generate HTML report
 	out, err := os.Create("index.html")
 	if err != nil {
 		log.Fatal("could not create newsletter HTML file", err)
@@ -362,6 +364,14 @@ func main() {
 	err = t.Execute(out, newsletter)
 	if err != nil {
 		log.Fatal("could not convert newsletter into HTML", err)
+	}
+	slog.Info("HTML file generated", "path", "index.html")
+
+	// Generate PDF report
+	if err := generatePDF(ctx, "index.html", "newsletter.pdf"); err != nil {
+		slog.Error("failed to generate PDF", "error", err)
+	} else {
+		slog.Info("PDF file generated", "path", "newsletter.pdf")
 	}
 }
 
@@ -377,4 +387,62 @@ func initDB(ctx context.Context, source string) (*sql.DB, error) {
 	}
 
 	return db, nil
+}
+
+func generatePDF(ctx context.Context, htmlPath, pdfPath string) error {
+	// Install playwright if needed
+	err := playwright.Install()
+	if err != nil {
+		return fmt.Errorf("could not install playwright: %w", err)
+	}
+
+	pw, err := playwright.Run()
+	if err != nil {
+		return fmt.Errorf("could not start playwright: %w", err)
+	}
+	defer pw.Stop()
+
+	browser, err := pw.Chromium.Launch()
+	if err != nil {
+		return fmt.Errorf("could not launch browser: %w", err)
+	}
+	defer browser.Close()
+
+	page, err := browser.NewPage()
+	if err != nil {
+		return fmt.Errorf("could not create page: %w", err)
+	}
+	defer page.Close()
+
+	// Get absolute path to HTML file
+	absPath, err := filepath.Abs(htmlPath)
+	if err != nil {
+		return fmt.Errorf("could not get absolute path: %w", err)
+	}
+
+	// Navigate to local HTML file
+	fileURL := fmt.Sprintf("file://%s", absPath)
+	if _, err = page.Goto(fileURL); err != nil {
+		return fmt.Errorf("could not navigate to HTML file: %w", err)
+	}
+
+	// Generate PDF with proper settings
+	// B5 paper size: 176mm x 250mm
+	_, err = page.PDF(playwright.PagePdfOptions{
+		Path:            playwright.String(pdfPath),
+		Width:           playwright.String("176mm"),
+		Height:          playwright.String("250mm"),
+		PrintBackground: playwright.Bool(true),
+		Margin: &playwright.Margin{
+			Top:    playwright.String("15mm"),
+			Right:  playwright.String("15mm"),
+			Bottom: playwright.String("15mm"),
+			Left:   playwright.String("15mm"),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("could not generate PDF: %w", err)
+	}
+
+	return nil
 }
