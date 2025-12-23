@@ -140,6 +140,7 @@ func (f *TelegramFetcher) Fetch(ctx context.Context, url string) (types.Feed, er
 				Link:        fmt.Sprintf("https://t.me/%s/%d", username, msg.ID),
 				Description: msg.Message,
 				Published:   time.Unix(int64(msg.Date), 0),
+				GUID:        fmt.Sprintf("%d", msg.ID), // Use message ID as GUID
 			}
 
 			feed.Items = append(feed.Items, item)

@@ -1,8 +1,8 @@
 -- Main feed tracking table
 CREATE TABLE IF NOT EXISTS feed (
-    title TEXT PRIMARY KEY,
-    url TEXT NOT NULL,
-    last_guid TEXT NOT NULL
+    url TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    last_processed_at INTEGER NOT NULL
 );
 
 -- Parser cache: stores parsed content by URL and parser type

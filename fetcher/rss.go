@@ -41,6 +41,7 @@ func (f *RSSFetcher) Fetch(ctx context.Context, url string) (types.Feed, error) 
 			Title:       item.Title,
 			Link:        item.Link,
 			Description: item.Description,
+			GUID:        item.GUID,
 		}
 
 		// Parse published date if available

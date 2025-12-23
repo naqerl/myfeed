@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"text/template"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/scipunch/myfeed/agent"
 	"github.com/scipunch/myfeed/cache"
 	"github.com/scipunch/myfeed/config"
+	"github.com/scipunch/myfeed/db"
 	"github.com/scipunch/myfeed/fetcher"
 	"github.com/scipunch/myfeed/filter"
 	"github.com/scipunch/myfeed/parser"
@@ -60,8 +62,10 @@ func main() {
 
 	var cfgPath string
 	var cleanCache bool
+	var includeAll bool
 	flag.StringVar(&cfgPath, "config", config.DefaultPath(), "path to a TOML config")
 	flag.BoolVar(&cleanCache, "clean", false, "remove all cache entries")
+	flag.BoolVar(&includeAll, "include-all", false, "include all feed items, ignoring last processed timestamp")
 	flag.Parse()
 
 	// Read config and create if default is missing
@@ -112,14 +116,17 @@ func main() {
 	defer stop()
 
 	// Initialize database (includes both main and cache schemas)
-	db, err := initDB(ctx, conf.DatabasePath)
+	database, err := initDB(ctx, conf.DatabasePath)
 	if err != nil {
 		log.Fatalf("failed to initialize database schema with %v", err)
 	}
-	defer db.Close()
+	defer database.Close()
+
+	// Initialize database queries
+	queries := db.New(database)
 
 	// Initialize cache using the shared database connection
-	cacheDB, err := cache.NewCacheFromDB(db)
+	cacheDB, err := cache.NewCacheFromDB(database)
 	if err != nil {
 		log.Fatalf("failed to initialize cache: %v", err)
 	}
@@ -207,7 +214,9 @@ func main() {
 	// Process new items
 	errs = nil
 	newsletter := Newsletter{Title: "Test newsletter"}
-	resourceMap := make(map[int]*Resource) // Map index to resource
+	resourceMap := make(map[int]*Resource)   // Map index to resource
+	feedLastProcessed := make(map[int]int64) // Track latest timestamp per feed
+
 	for i, feed := range feeds {
 		// Check if context was cancelled
 		select {
@@ -222,6 +231,22 @@ func main() {
 			continue
 		}
 		resource := conf.Resources[i]
+
+		// Get last processed timestamp for this feed
+		var lastProcessedAt int64
+		if !includeAll {
+			feedData, err := queries.GetFeed(ctx, resource.FeedURL)
+			if err == nil {
+				lastProcessedAt = feedData.LastProcessedAt
+				slog.Debug("loaded last processed timestamp",
+					"feed", resource.FeedURL,
+					"timestamp", lastProcessedAt,
+					"time", time.Unix(lastProcessedAt, 0))
+			} else if !errors.Is(err, sql.ErrNoRows) {
+				slog.Warn("failed to get feed tracking data", "error", err, "feed", resource.FeedURL)
+			}
+		}
+
 		p := parsers[resource.ParserT]
 		for _, item := range feed.Items {
 			// Check for cancellation before processing each item
@@ -232,6 +257,16 @@ func main() {
 			default:
 			}
 
+			// Skip items that were already processed (based on published date)
+			itemTimestamp := item.Published.Unix()
+			if !includeAll && itemTimestamp > 0 && itemTimestamp <= lastProcessedAt {
+				slog.Debug("item already processed, skipping",
+					"title", item.Title,
+					"published", item.Published,
+					"last_processed", time.Unix(lastProcessedAt, 0))
+				continue
+			}
+
 			// Apply filters
 			if len(resource.FilterNames) > 0 {
 				shouldInclude, reason := filterPipeline.ShouldInclude(item, resource.FilterNames)
@@ -239,6 +274,11 @@ func main() {
 					slog.Debug("item filtered out", "title", item.Title, "reason", reason, "url", item.Link)
 					continue
 				}
+			}
+
+			// Track the latest timestamp for this feed
+			if itemTimestamp > feedLastProcessed[i] {
+				feedLastProcessed[i] = itemTimestamp
 			}
 
 			var content string
@@ -366,6 +406,35 @@ func main() {
 		log.Fatal("could not convert newsletter into HTML", err)
 	}
 	slog.Info("HTML file generated", "path", "index.html")
+
+	// Update last processed timestamps for feeds
+	if !includeAll {
+		for i, feed := range feeds {
+			if feed == nil {
+				continue
+			}
+
+			// Get the latest timestamp for this feed
+			lastTimestamp := feedLastProcessed[i]
+			if lastTimestamp > 0 {
+				resource := conf.Resources[i]
+				err := queries.UpdateLastProcessedAt(ctx, db.UpdateLastProcessedAtParams{
+					Url:             resource.FeedURL,
+					Title:           feed.Title,
+					LastProcessedAt: lastTimestamp,
+				})
+				if err != nil {
+					slog.Warn("failed to update last processed timestamp",
+						"error", err,
+						"feed", resource.FeedURL)
+				} else {
+					slog.Debug("updated last processed timestamp",
+						"feed", resource.FeedURL,
+						"timestamp", time.Unix(lastTimestamp, 0))
+				}
+			}
+		}
+	}
 
 	// Generate PDF report
 	if err := generatePDF(ctx, "index.html", "newsletter.pdf"); err != nil {

@@ -18,6 +18,7 @@ type FeedItem struct {
 	Link        string
 	Description string
 	Published   time.Time
+	GUID        string // Unique identifier (GUID for RSS, message ID for Telegram)
 }
 
 // FeedFetcher is an interface for fetching feeds from different sources
