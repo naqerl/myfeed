@@ -46,10 +46,11 @@ type Resource struct {
 }
 
 type Page struct {
-	Title   string
-	Link    string
-	Content string
-	ID      string // Unique ID for anchor links
+	Title     string
+	Link      string
+	Content   string
+	ID        string // Unique ID for anchor links
+	Published time.Time
 }
 
 func main() {
@@ -372,10 +373,11 @@ func main() {
 			}
 
 			res.Pages = append(res.Pages, Page{
-				Title:   item.Title,
-				Link:    item.Link,
-				Content: content,
-				ID:      pageID,
+				Title:     item.Title,
+				Link:      item.Link,
+				Content:   content,
+				ID:        pageID,
+				Published: item.Published,
 			})
 		}
 	}
