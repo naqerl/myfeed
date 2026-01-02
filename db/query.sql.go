@@ -9,6 +9,21 @@ import (
 	"context"
 )
 
+const deleteLatestGeneration = `-- name: DeleteLatestGeneration :exec
+DELETE FROM generation_history
+WHERE created_at = (
+    SELECT created_at
+    FROM generation_history
+    ORDER BY created_at DESC
+    LIMIT 1
+)
+`
+
+func (q *Queries) DeleteLatestGeneration(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteLatestGeneration)
+	return err
+}
+
 const getFeed = `-- name: GetFeed :one
 SELECT url, title, last_processed_at
 FROM feed
@@ -20,6 +35,37 @@ func (q *Queries) GetFeed(ctx context.Context, url string) (Feed, error) {
 	var i Feed
 	err := row.Scan(&i.Url, &i.Title, &i.LastProcessedAt)
 	return i, err
+}
+
+const getLatestGenerationTimestamp = `-- name: GetLatestGenerationTimestamp :one
+SELECT last_processed_at
+FROM generation_history
+WHERE feed_url = ?
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLatestGenerationTimestamp(ctx context.Context, feedUrl string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getLatestGenerationTimestamp, feedUrl)
+	var last_processed_at int64
+	err := row.Scan(&last_processed_at)
+	return last_processed_at, err
+}
+
+const saveGenerationHistory = `-- name: SaveGenerationHistory :exec
+INSERT INTO generation_history (feed_url, last_processed_at, created_at)
+VALUES (?, ?, ?)
+`
+
+type SaveGenerationHistoryParams struct {
+	FeedUrl         string
+	LastProcessedAt int64
+	CreatedAt       int64
+}
+
+func (q *Queries) SaveGenerationHistory(ctx context.Context, arg SaveGenerationHistoryParams) error {
+	_, err := q.db.ExecContext(ctx, saveGenerationHistory, arg.FeedUrl, arg.LastProcessedAt, arg.CreatedAt)
+	return err
 }
 
 const updateLastProcessedAt = `-- name: UpdateLastProcessedAt :exec

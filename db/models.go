@@ -20,6 +20,13 @@ type Feed struct {
 	LastProcessedAt int64
 }
 
+type GenerationHistory struct {
+	ID              int64
+	FeedUrl         string
+	LastProcessedAt int64
+	CreatedAt       int64
+}
+
 type ParserCache struct {
 	ID         int64
 	Url        string

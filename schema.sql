@@ -5,6 +5,17 @@ CREATE TABLE IF NOT EXISTS feed (
     last_processed_at INTEGER NOT NULL
 );
 
+-- Generation history: tracks feed timestamps for each newsletter generation
+CREATE TABLE IF NOT EXISTS generation_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    feed_url TEXT NOT NULL,
+    last_processed_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (feed_url) REFERENCES feed(url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_generation_history_created ON generation_history(created_at DESC);
+
 -- Parser cache: stores parsed content by URL and parser type
 CREATE TABLE IF NOT EXISTS parser_cache (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

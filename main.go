@@ -64,9 +64,11 @@ func main() {
 	var cfgPath string
 	var cleanCache bool
 	var includeAll bool
+	var regenerate bool
 	flag.StringVar(&cfgPath, "config", config.DefaultPath(), "path to a TOML config")
 	flag.BoolVar(&cleanCache, "clean", false, "remove all cache entries")
 	flag.BoolVar(&includeAll, "include-all", false, "include all feed items, ignoring last processed timestamp")
+	flag.BoolVar(&regenerate, "regenerate", false, "delete last generation history and regenerate with same or new feed items")
 	flag.Parse()
 
 	// Read config and create if default is missing
@@ -113,6 +115,15 @@ func main() {
 		log.Fatalf("failed to create base shared directory at '%s' with %s", dbBasePath, err)
 	}
 
+	// Ensure output directory exists
+	if conf.OutputDirectory == "" {
+		conf.OutputDirectory = path.Join(os.Getenv("HOME"), "myfeed")
+	}
+	err = os.MkdirAll(conf.OutputDirectory, os.ModePerm)
+	if err != nil {
+		log.Fatalf("failed to create output directory at '%s' with %s", conf.OutputDirectory, err)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -139,6 +150,14 @@ func main() {
 		}
 		slog.Info("cache cleared successfully")
 		return
+	}
+
+	// Handle -regenerate flag
+	if regenerate {
+		if err := queries.DeleteLatestGeneration(ctx); err != nil {
+			log.Fatalf("failed to delete latest generation history: %v", err)
+		}
+		slog.Info("latest generation history deleted, will regenerate with same or new items")
 	}
 
 	// Show cache stats
@@ -236,15 +255,16 @@ func main() {
 		// Get last processed timestamp for this feed
 		var lastProcessedAt int64
 		if !includeAll {
-			feedData, err := queries.GetFeed(ctx, resource.FeedURL)
+			// Try to get from generation history first
+			timestamp, err := queries.GetLatestGenerationTimestamp(ctx, resource.FeedURL)
 			if err == nil {
-				lastProcessedAt = feedData.LastProcessedAt
-				slog.Debug("loaded last processed timestamp",
+				lastProcessedAt = timestamp
+				slog.Debug("loaded last processed timestamp from generation history",
 					"feed", resource.FeedURL,
 					"timestamp", lastProcessedAt,
 					"time", time.Unix(lastProcessedAt, 0))
 			} else if !errors.Is(err, sql.ErrNoRows) {
-				slog.Warn("failed to get feed tracking data", "error", err, "feed", resource.FeedURL)
+				slog.Warn("failed to get generation history", "error", err, "feed", resource.FeedURL)
 			}
 		}
 
@@ -397,8 +417,22 @@ func main() {
 		slog.Error("failed to parse some pages", "errors", errors.Join(errs...).Error())
 	}
 
+	// Create dated subdirectory for this generation
+	now := time.Now()
+	dateDir := now.Format("2006_01_02")
+	outputPath := path.Join(conf.OutputDirectory, dateDir)
+	err = os.MkdirAll(outputPath, os.ModePerm)
+	if err != nil {
+		log.Fatalf("failed to create dated output directory at '%s' with %s", outputPath, err)
+	}
+
+	// Generate file names with date
+	fileName := fmt.Sprintf("myfeed_%s", now.Format("2006_01_02"))
+	htmlPath := path.Join(outputPath, fileName+".html")
+	pdfPath := path.Join(outputPath, fileName+".pdf")
+
 	// Generate HTML report
-	out, err := os.Create("index.html")
+	out, err := os.Create(htmlPath)
 	if err != nil {
 		log.Fatal("could not create newsletter HTML file", err)
 	}
@@ -407,10 +441,11 @@ func main() {
 	if err != nil {
 		log.Fatal("could not convert newsletter into HTML", err)
 	}
-	slog.Info("HTML file generated", "path", "index.html")
+	slog.Info("HTML file generated", "path", htmlPath)
 
-	// Update last processed timestamps for feeds
+	// Update last processed timestamps for feeds and save generation history
 	if !includeAll {
+		generationTime := time.Now().Unix()
 		for i, feed := range feeds {
 			if feed == nil {
 				continue
@@ -420,6 +455,8 @@ func main() {
 			lastTimestamp := feedLastProcessed[i]
 			if lastTimestamp > 0 {
 				resource := conf.Resources[i]
+
+				// Update the main feed table
 				err := queries.UpdateLastProcessedAt(ctx, db.UpdateLastProcessedAtParams{
 					Url:             resource.FeedURL,
 					Title:           feed.Title,
@@ -434,15 +471,27 @@ func main() {
 						"feed", resource.FeedURL,
 						"timestamp", time.Unix(lastTimestamp, 0))
 				}
+
+				// Save to generation history
+				err = queries.SaveGenerationHistory(ctx, db.SaveGenerationHistoryParams{
+					FeedUrl:         resource.FeedURL,
+					LastProcessedAt: lastTimestamp,
+					CreatedAt:       generationTime,
+				})
+				if err != nil {
+					slog.Warn("failed to save generation history",
+						"error", err,
+						"feed", resource.FeedURL)
+				}
 			}
 		}
 	}
 
 	// Generate PDF report
-	if err := generatePDF(ctx, "index.html", "newsletter.pdf"); err != nil {
+	if err := generatePDF(ctx, htmlPath, pdfPath); err != nil {
 		slog.Error("failed to generate PDF", "error", err)
 	} else {
-		slog.Info("PDF file generated", "path", "newsletter.pdf")
+		slog.Info("PDF file generated", "path", pdfPath)
 	}
 }
 

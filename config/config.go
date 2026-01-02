@@ -21,9 +21,10 @@ var (
 const baseCfgPath = "myfeed/config.toml"
 
 type Config struct {
-	Resources    []ResourceConfig  `toml:"resources"`
-	DatabasePath string            `toml:"database_path"`
-	Filters      map[string]Filter `toml:"filters"` // Named filters that can be referenced by resources
+	Resources       []ResourceConfig  `toml:"resources"`
+	DatabasePath    string            `toml:"database_path"`
+	OutputDirectory string            `toml:"output_directory"` // Directory for generated files (defaults to $HOME/myfeed)
+	Filters         map[string]Filter `toml:"filters"`          // Named filters that can be referenced by resources
 }
 
 type ResourceConfig struct {
@@ -84,9 +85,12 @@ func Write(cfgPath string, cfg Config) error {
 
 func Default() Config {
 	var dbBase = path.Join(os.Getenv("HOME"), ".local/share/myfeed")
+	var home = os.Getenv("HOME")
+	var outputDir = path.Join(home, "myfeed")
 	return Config{
-		DatabasePath: path.Join(dbBase, "data.db"),
-		Resources:    []ResourceConfig{},
+		DatabasePath:    path.Join(dbBase, "data.db"),
+		OutputDirectory: outputDir,
+		Resources:       []ResourceConfig{},
 	}
 }
 
