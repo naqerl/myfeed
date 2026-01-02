@@ -3,6 +3,7 @@ package telegram
 import (
 	"fmt"
 	"html"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -29,11 +30,50 @@ func (r Response) String() string {
 
 // Parse takes a FeedItem and converts the Description (Telegram message content) to HTML
 // Uses item.Link as the cache key, but processes item.Description as the content
+// Also includes any media attachments (photos) in the HTML
 func (p Parser) Parse(item types.FeedItem) (parser.Response, error) {
-	// For Telegram messages, the content is in Description field
-	// Link field is used as the cache key
-	html := convertTelegramToHTML(item.Description)
-	return Response{HTML: html}, nil
+	var htmlBuilder strings.Builder
+
+	// Add media (photos) before the text content
+	for _, media := range item.Media {
+		if media.Type == "photo" {
+			if media.LocalPath != "" {
+				// Image with successful download
+				// Use relative path: media/filename
+				filename := filepath.Base(media.LocalPath)
+				relativePath := filepath.Join("media", filename)
+
+				htmlBuilder.WriteString(fmt.Sprintf(
+					`<img src="%s" alt="%s" style="max-width: 100%%; height: auto; margin-bottom: 1em;" width="%d" height="%d">`,
+					relativePath,
+					escapeHTML(media.Caption),
+					media.Width,
+					media.Height,
+				))
+				htmlBuilder.WriteString("\n")
+			} else if media.Caption != "" {
+				// Failed download - show error message
+				htmlBuilder.WriteString(fmt.Sprintf(
+					`<div style="padding: 1em; background: #fee; border: 1em solid #fcc; margin-bottom: 1em;">%s</div>`,
+					escapeHTML(media.Caption),
+				))
+				htmlBuilder.WriteString("\n")
+			}
+		}
+	}
+
+	// Add text content
+	if item.Description != "" {
+		textHTML := convertTelegramToHTML(item.Description)
+		htmlBuilder.WriteString(textHTML)
+	}
+
+	return Response{HTML: htmlBuilder.String()}, nil
+}
+
+// escapeHTML escapes HTML special characters
+func escapeHTML(s string) string {
+	return html.EscapeString(s)
 }
 
 // ParseMessage converts a Telegram message text to HTML
