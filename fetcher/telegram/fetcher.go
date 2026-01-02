@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,6 +45,12 @@ func (f *TelegramFetcher) Fetch(ctx context.Context, url string) (types.Feed, er
 	username, err := parseChannelURL(url)
 	if err != nil {
 		return feed, fmt.Errorf("invalid channel URL: %w", err)
+	}
+
+	// Create temporary directory for media downloads
+	tmpDir := filepath.Join(os.TempDir(), "myfeed-telegram-media")
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return feed, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
 	// Run with authenticated client
@@ -130,17 +138,43 @@ func (f *TelegramFetcher) Fetch(ctx context.Context, url string) (types.Feed, er
 				continue // Skip service messages
 			}
 
-			// Skip empty messages
-			if msg.Message == "" {
+			// Create GUID for this message
+			messageGUID := fmt.Sprintf("%d", msg.ID)
+
+			// Extract media attachments (photos)
+			media, err := extractMediaFromMessage(ctx, client, msg, messageGUID, tmpDir)
+			if err != nil {
+				slog.Warn("failed to extract media from message",
+					"error", err,
+					"message_id", msg.ID,
+					"channel", username)
+				// Continue processing the message even if media extraction fails
+			}
+
+			// Determine title: use message text if available, otherwise indicate it's a photo
+			title := msg.Message
+			if title == "" && len(media) > 0 {
+				if len(media) == 1 {
+					title = "Photo"
+				} else {
+					title = fmt.Sprintf("Album (%d photos)", len(media))
+				}
+			} else if title != "" {
+				title = truncateText(title, 100) // Use first 100 chars as title
+			}
+
+			// Skip completely empty messages (no text and no media)
+			if title == "" && len(media) == 0 {
 				continue
 			}
 
 			item := types.FeedItem{
-				Title:       truncateText(msg.Message, 100), // Use first 100 chars as title
+				Title:       title,
 				Link:        fmt.Sprintf("https://t.me/%s/%d", username, msg.ID),
 				Description: msg.Message,
 				Published:   time.Unix(int64(msg.Date), 0),
-				GUID:        fmt.Sprintf("%d", msg.ID), // Use message ID as GUID
+				GUID:        messageGUID,
+				Media:       media,
 			}
 
 			feed.Items = append(feed.Items, item)
