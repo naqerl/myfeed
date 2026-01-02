@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -236,6 +237,7 @@ func main() {
 	newsletter := Newsletter{Title: "Test newsletter"}
 	resourceMap := make(map[int]*Resource)   // Map index to resource
 	feedLastProcessed := make(map[int]int64) // Track latest timestamp per feed
+	mediaFiles := make(map[string]string)    // Map temp path -> output filename for media files
 
 	for i, feed := range feeds {
 		// Check if context was cancelled
@@ -382,6 +384,15 @@ func main() {
 			hash := sha256.Sum256([]byte(item.Link))
 			pageID := hex.EncodeToString(hash[:8])
 
+			// Track media files for later copying to output directory
+			for _, media := range item.Media {
+				if media.LocalPath != "" && media.Type == "photo" {
+					// Use the filename from the local path
+					filename := filepath.Base(media.LocalPath)
+					mediaFiles[media.LocalPath] = filename
+				}
+			}
+
 			// Get or create resource for this feed
 			res, exists := resourceMap[i]
 			if !exists {
@@ -424,6 +435,25 @@ func main() {
 	err = os.MkdirAll(outputPath, os.ModePerm)
 	if err != nil {
 		log.Fatalf("failed to create dated output directory at '%s' with %s", outputPath, err)
+	}
+
+	// Create media subdirectory and copy media files
+	if len(mediaFiles) > 0 {
+		mediaDir := filepath.Join(outputPath, "media")
+		err = os.MkdirAll(mediaDir, os.ModePerm)
+		if err != nil {
+			log.Fatalf("failed to create media directory at '%s' with %s", mediaDir, err)
+		}
+
+		for srcPath, filename := range mediaFiles {
+			dstPath := filepath.Join(mediaDir, filename)
+			if err := copyMediaFile(srcPath, dstPath); err != nil {
+				slog.Warn("failed to copy media file", "src", srcPath, "dst", dstPath, "error", err)
+			} else {
+				slog.Debug("copied media file", "src", srcPath, "dst", dstPath)
+			}
+		}
+		slog.Info("copied media files", "count", len(mediaFiles))
 	}
 
 	// Generate file names with date
@@ -562,6 +592,27 @@ func generatePDF(ctx context.Context, htmlPath, pdfPath string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("could not generate PDF: %w", err)
+	}
+
+	return nil
+}
+
+// copyMediaFile copies a media file from src to dst
+func copyMediaFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source file: %w", err)
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer destFile.Close()
+
+	if _, err := io.Copy(destFile, sourceFile); err != nil {
+		return fmt.Errorf("failed to copy file: %w", err)
 	}
 
 	return nil
