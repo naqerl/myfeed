@@ -18,7 +18,17 @@ type FeedItem struct {
 	Link        string
 	Description string
 	Published   time.Time
-	GUID        string // Unique identifier (GUID for RSS, message ID for Telegram)
+	GUID        string            // Unique identifier (GUID for RSS, message ID for Telegram)
+	Media       []MediaAttachment // Media attachments (photos, videos, etc.)
+}
+
+// MediaAttachment represents a media file attached to a feed item
+type MediaAttachment struct {
+	Type      string // "photo", "video", "document"
+	LocalPath string // Path to downloaded file (relative to output directory)
+	Width     int    // Width in pixels (for photos/videos)
+	Height    int    // Height in pixels (for photos/videos)
+	Caption   string // Optional caption for the media
 }
 
 // FeedFetcher is an interface for fetching feeds from different sources
